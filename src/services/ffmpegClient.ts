@@ -1,6 +1,6 @@
 import type {
   Capabilities,
-  LoudnessNormalizeData,
+  LoudnessNormalizeResult,
   SelfTestResult,
   WorkerRequest,
   WorkerResponse,
@@ -83,12 +83,12 @@ export async function runSelfTest(): Promise<SelfTestResult> {
 export async function normalizeAudio(
   wav: Uint8Array,
   targetLufs: number,
-): Promise<LoudnessNormalizeData> {
+): Promise<LoudnessNormalizeResult> {
   const response = await request({ kind: "normalize", wav, targetLufs })
   if (!response.ok || !response.data) {
     throw new Error(response.error || "normalization failed")
   }
-  return response.data as LoudnessNormalizeData
+  return response.data as LoudnessNormalizeResult
 }
 
 export function getLogs(): string[] {

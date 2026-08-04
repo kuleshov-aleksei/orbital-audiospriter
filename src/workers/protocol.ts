@@ -30,14 +30,8 @@ export interface LoudnessNormalizeResult {
   gainDb: number
   /** True peak after gain, dBFS. */
   truePeakDb: number
-  /** loudnorm two-pass (preferred) or JS EBU R128 + volume filter. */
+  /** loudnorm (preferred) or JS EBU R128 measurement. */
   method: "loudnorm" | "r128"
-}
-
-export interface LoudnessNormalizeData {
-  /** Normalized mono 16-bit PCM WAV. */
-  wav: Uint8Array
-  result: LoudnessNormalizeResult
 }
 
 export type WorkerRequest =
@@ -48,7 +42,7 @@ export type WorkerRequest =
 export interface WorkerResponse {
   id: number
   ok: boolean
-  data?: Capabilities | SelfTestResult | LoudnessNormalizeData
+  data?: Capabilities | SelfTestResult | LoudnessNormalizeResult
   error?: string
   logs: string[]
 }

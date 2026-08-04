@@ -187,14 +187,27 @@
           <h3 class="text-sm font-semibold text-zinc-200">Loudness normalization</h3>
           <label class="mt-2 flex items-center gap-2 text-xs text-zinc-500">
             Target
-            <select
+            <input
               v-model.number="store.targetLufs"
-              class="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-200">
-              <option v-for="preset in LUFS_PRESETS" :key="preset.value" :value="preset.value">
-                {{ preset.label }}
-              </option>
-            </select>
+              type="number"
+              min="-50"
+              max="0"
+              step="0.1"
+              class="w-20 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-200"
+              title="Target integrated loudness in LUFS (-50 to 0)" />
+            LUFS
           </label>
+          <div class="mt-2 flex flex-wrap gap-1">
+            <button
+              v-for="preset in LUFS_PRESETS"
+              :key="preset"
+              type="button"
+              class="rounded bg-zinc-800 px-2 py-0.5 font-mono text-[11px] text-zinc-300 transition hover:bg-zinc-700"
+              :class="{ 'ring-1 ring-violet-500/70': preset === store.targetLufs }"
+              @click="store.targetLufs = preset">
+              {{ preset }}
+            </button>
+          </div>
           <div class="mt-3 flex flex-wrap items-center gap-2">
             <p v-if="selected && measuredLufs !== null" class="text-xs text-zinc-400">
               <span class="text-zinc-500">Measured:</span>
@@ -264,14 +277,7 @@ defineOptions({ name: "EditorView" })
 
 const store = useProjectStore()
 
-const LUFS_PRESETS: ReadonlyArray<{ value: number; label: string }> = [
-  { value: -14, label: "-14 LUFS" },
-  { value: -16, label: "-16 LUFS" },
-  { value: -18, label: "-18 LUFS" },
-  { value: -20, label: "-20 LUFS" },
-  { value: -23, label: "-23 LUFS" },
-  { value: -26, label: "-26 LUFS" },
-]
+const LUFS_PRESETS: readonly number[] = [-14, -16, -18, -20, -23, -26]
 
 const normalizing = ref(false)
 const normalizeDone = ref(0)
@@ -694,7 +700,7 @@ async function normalizeSample(sample: Sample): Promise<void> {
   const measured = measureLoudness(spliced, sample.sampleRate)
   if (!Number.isFinite(measured.integratedLufs)) return
   const wav = pcmToWav16(spliced, sample.sampleRate)
-  const { result } = await normalizeAudio(wav, store.targetLufs)
+  const result = await normalizeAudio(wav, store.targetLufs)
   store.scaleSamplePcm(sample.id, Math.pow(10, result.gainDb / 20))
   store.setLoudness(sample.id, result)
   store.setSampleTargetLufs(sample.id, store.targetLufs)

@@ -6,7 +6,6 @@ import { detectCapabilities, parseEncoderNames, parseFilterNames } from "@/servi
 import { measureLoudness, parseLoudnormJson } from "@/utils/loudness"
 import type {
   Capabilities,
-  LoudnessNormalizeData,
   LoudnessNormalizeResult,
   SelfTestFormat,
   SelfTestResult,
@@ -104,12 +103,17 @@ async function hasLoudnorm(): Promise<boolean> {
 
 const LOUDNORM_LIMITS = "LRA=7:TP=-1.5"
 
-async function runNormalize(wav: Uint8Array, targetLufs: number): Promise<LoudnessNormalizeData> {
+/**
+ * Measure the integrated loudness of the input and return the linear gain
+ * (dB) required to reach the target. The loudnorm filter is preferred for the
+ * measurement (otherwise a JS EBU R128 pass is used); the actual gain is
+ * applied on the client PCM so it always reflects the true measured offset.
+ */
+async function runNormalize(wav: Uint8Array, targetLufs: number): Promise<LoudnessNormalizeResult> {
   const instance = await loadFfmpeg()
   await instance.writeFile("in.wav", wav)
 
   if (await hasLoudnorm()) {
-    // Pass 1: measure with loudnorm in print mode (output discarded).
     const measureMarker = `__norm_measure_${requestMarker++}`
     pushLog([measureMarker])
     const measured = await captureOutput(measureMarker, () =>
@@ -125,78 +129,35 @@ async function runNormalize(wav: Uint8Array, targetLufs: number): Promise<Loudne
       ]),
     )
     const json = parseLoudnormJson(measured)
-    if (!json) {
-      throw new Error("loudnorm did not emit a measurement JSON")
+    const inputI = json?.input_i
+    const inputTp = json?.input_tp
+    if (
+      typeof inputI !== "number" ||
+      typeof inputTp !== "number" ||
+      !Number.isFinite(inputI) ||
+      !Number.isFinite(inputTp)
+    ) {
+      throw new Error("cannot normalize silent audio")
     }
-    const inputI = json.input_i
-    const inputTp = json.input_tp
-    const inputLra = json.input_lra
-    const inputThresh = json.input_thresh
-    const offset = json.target_offset
-    if (![inputI, inputTp, inputLra, inputThresh, offset].every((v) => Number.isFinite(v))) {
-      throw new Error("loudnorm measured non-finite loudness (silent audio?)")
-    }
-
-    // Pass 2: apply the measured linear gain to reach the target.
-    try {
-      await instance.deleteFile("out.wav")
-    } catch {
-      // file may not exist yet
-    }
-    const applyMarker = `__norm_apply_${requestMarker++}`
-    pushLog([applyMarker])
-    await captureOutput(applyMarker, () =>
-      instance.exec([
-        "-hide_banner",
-        "-i",
-        "in.wav",
-        "-af",
-        `loudnorm=I=${targetLufs}:${LOUDNORM_LIMITS}:measured_I=${inputI}:measured_LRA=${inputLra}:measured_TP=${inputTp}:measured_thresh=${inputThresh}:offset=${offset}:linear=true`,
-        "-codec:a",
-        "pcm_s16le",
-        "out.wav",
-      ]),
-    )
-    const normalized = (await instance.readFile("out.wav")) as Uint8Array
+    const gainDb = targetLufs - inputI
     const result: LoudnessNormalizeResult = {
       integratedLufs: inputI,
-      gainDb: offset,
-      truePeakDb: inputTp + offset,
+      gainDb,
+      truePeakDb: inputTp + gainDb,
       method: "loudnorm",
     }
     pushLog([
-      `[normalize] loudnorm two-pass: ${inputI.toFixed(1)} LUFS -> ${targetLufs} LUFS, gain ${offset.toFixed(2)} dB`,
+      `[normalize] loudnorm: ${inputI.toFixed(1)} LUFS -> ${targetLufs} LUFS, gain ${gainDb.toFixed(2)} dB`,
     ])
-    return { wav: normalized, result }
+    return result
   }
 
-  // Fallback: JS EBU R128 measurement + linear gain via the volume filter.
   const decoded = wav16ToPcm(wav)
   const measured = measureLoudness(decoded.pcm, decoded.sampleRate)
   if (!Number.isFinite(measured.integratedLufs)) {
     throw new Error("cannot normalize silent audio")
   }
   const gainDb = targetLufs - measured.integratedLufs
-  try {
-    await instance.deleteFile("out.wav")
-  } catch {
-    // file may not exist yet
-  }
-  const applyMarker = `__norm_apply_${requestMarker++}`
-  pushLog([applyMarker])
-  await captureOutput(applyMarker, () =>
-    instance.exec([
-      "-hide_banner",
-      "-i",
-      "in.wav",
-      "-af",
-      `volume=${gainDb.toFixed(3)}dB`,
-      "-codec:a",
-      "pcm_s16le",
-      "out.wav",
-    ]),
-  )
-  const normalized = (await instance.readFile("out.wav")) as Uint8Array
   const result: LoudnessNormalizeResult = {
     integratedLufs: measured.integratedLufs,
     gainDb,
@@ -206,7 +167,7 @@ async function runNormalize(wav: Uint8Array, targetLufs: number): Promise<Loudne
   pushLog([
     `[normalize] EBU R128 fallback: ${measured.integratedLufs.toFixed(1)} LUFS -> ${targetLufs} LUFS, gain ${gainDb.toFixed(2)} dB`,
   ])
-  return { wav: normalized, result }
+  return result
 }
 
 async function runSelfTest(): Promise<SelfTestResult> {
@@ -278,7 +239,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
   const respond = (
     ok: boolean,
-    data?: Capabilities | SelfTestResult | LoudnessNormalizeData,
+    data?: Capabilities | SelfTestResult | LoudnessNormalizeResult,
     error?: string,
   ): void => {
     const response: WorkerResponse = { id, ok, data, error, logs: logTail.slice() }
