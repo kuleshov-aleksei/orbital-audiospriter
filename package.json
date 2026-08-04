@@ -21,6 +21,7 @@
     "@ffmpeg/core-st": "^0.11.1",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
+    "@phosphor-icons/vue": "^2.2.1",
     "pinia": "^4.0.2",
     "vue": "^3.5.40",
     "wavesurfer.js": "^7.12.11"

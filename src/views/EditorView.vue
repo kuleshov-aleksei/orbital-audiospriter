@@ -92,23 +92,9 @@
 
           <div v-if="selected" class="mt-3 flex flex-wrap items-center gap-2">
             <button type="button" class="btn" :disabled="!wavesurferReady" @click="togglePlay()">
+              <PhPlay v-if="!isPlaying" :size="14" weight="bold" class="mr-1.5 inline" />
+              <PhPause v-else :size="14" weight="bold" class="mr-1.5 inline" />
               {{ isPlaying ? "Pause" : "Play" }}
-            </button>
-            <button
-              type="button"
-              class="btn-secondary"
-              title="Back 2 seconds (J)"
-              :disabled="!wavesurferReady"
-              @click="seekBy(-2)">
-              « 2s
-            </button>
-            <button
-              type="button"
-              class="btn-secondary"
-              title="Forward 2 seconds (L)"
-              :disabled="!wavesurferReady"
-              @click="seekBy(2)">
-              2s »
             </button>
             <span class="font-mono text-xs text-zinc-400">
               {{ formatTime(currentTime) }} / {{ selected ? formatTime(selected.duration) : "" }}
@@ -120,7 +106,8 @@
               title="Split the piece under the playhead"
               :disabled="!wavesurferReady || !canCut"
               @click="cutAtPlayhead()">
-              ✂ Cut
+              <PhScissors :size="14" weight="bold" class="mr-1.5 inline" />
+              Cut
             </button>
             <button
               type="button"
@@ -128,7 +115,8 @@
               :title="hasSelection ? 'Delete the selected range' : 'Delete the selected piece'"
               :disabled="!canDeleteSelection"
               @click="deleteSelectedChunk()">
-              {{ hasSelection ? "🗑 Delete selection" : "🗑 Delete piece" }}
+              <PhTrash :size="14" weight="bold" class="mr-1.5 inline" />
+              {{ hasSelection ? "Delete selection" : "Delete piece" }}
             </button>
             <button
               type="button"
@@ -140,7 +128,8 @@
               "
               :disabled="!canMakeSfx"
               @click="extractSelectedChunk()">
-              ✨ Make SFX
+              <PhMagicWand :size="14" weight="bold" class="mr-1.5 inline" />
+              Make SFX
             </button>
             <button
               type="button"
@@ -148,6 +137,7 @@
               title="Remove everything outside the selection"
               :disabled="!hasSelection"
               @click="trimToSelection()">
+              <PhCrop :size="14" weight="bold" class="mr-1.5 inline" />
               Keep only selection
             </button>
             <button
@@ -156,7 +146,7 @@
               title="Zoom out"
               :disabled="!wavesurferReady"
               @click="zoomBy(-1)">
-              −
+              <PhMagnifyingGlassMinus :size="14" weight="bold" class="inline" />
             </button>
             <span class="font-mono text-xs text-zinc-500">{{ zoomLevel.toFixed(1) }}×</span>
             <button
@@ -165,7 +155,7 @@
               title="Zoom in"
               :disabled="!wavesurferReady"
               @click="zoomBy(1)">
-              +
+              <PhMagnifyingGlassPlus :size="14" weight="bold" class="inline" />
             </button>
             <span class="h-4 w-px bg-zinc-700"></span>
             <label class="text-xs text-zinc-500">
@@ -194,9 +184,13 @@
 
           <div v-if="selected" class="mt-3 flex flex-wrap items-center gap-2">
             <button type="button" class="btn-secondary" :disabled="!canUndo" @click="undoChunks()">
+              <PhArrowCounterClockwise :size="14" weight="bold" class="mr-1.5 inline" />
               Undo edit
             </button>
-            <button type="button" class="btn-secondary" @click="resetChunks()">Reset pieces</button>
+            <button type="button" class="btn-secondary" @click="resetChunks()">
+              <PhArrowsCounterClockwise :size="14" weight="bold" class="mr-1.5 inline" />
+              Reset pieces
+            </button>
             <span class="h-4 w-px bg-zinc-700"></span>
             <button
               type="button"
@@ -204,7 +198,8 @@
               title="Encode kept pieces as mono MP3 and write it back to the source folder"
               :disabled="saving || !selected.pcm"
               @click="saveSelected()">
-              {{ saving ? "Encoding…" : "💾 Save MP3" }}
+              <PhFloppyDisk :size="14" weight="bold" class="mr-1.5 inline" />
+              {{ saving ? "Encoding…" : "Save MP3" }}
             </button>
             <button
               type="button"
@@ -212,6 +207,7 @@
               title="Encode every imported sample to MP3 and write them all back"
               :disabled="saving || store.samples.length === 0"
               @click="saveAll()">
+              <PhFloppyDisk :size="14" weight="bold" class="mr-1.5 inline" />
               {{
                 saving ? `Encoding ${saveDone}/${saveTotal}…` : `Save all (${store.samples.length})`
               }}
@@ -295,7 +291,8 @@
               type="button"
               class="text-violet-300 transition hover:text-violet-200"
               @click="undoNormalizeUi()">
-              ↺ Undo normalization
+              <PhArrowCounterClockwise :size="12" weight="bold" class="mr-1 inline" />
+              Undo normalization
             </button>
           </div>
           <p v-if="normalizeError" class="mt-2 text-sm text-red-400">{{ normalizeError }}</p>
@@ -318,7 +315,8 @@
                 "
                 :title="testMode ? 'Back to assigning events' : 'Listen to assigned samples'"
                 @click="toggleTestMode()">
-                {{ testMode ? "🎧 Testing" : "🎧 Test" }}
+                <PhHeadphones :size="12" weight="bold" class="mr-1 inline" />
+                {{ testMode ? "Testing" : "Test" }}
               </button>
             </div>
           </div>
@@ -343,11 +341,9 @@
                   class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
                   :class="statusDotClass(event)"></span>
                 {{ event }}
-                <span
-                  v-if="testMode && playingEvent === event"
-                  class="ml-1 text-[10px] text-violet-300"
-                  >▶</span
-                >
+                <span v-if="testMode && playingEvent === event" class="ml-1 inline text-violet-300"
+                  ><PhPlay :size="10" weight="fill"
+                /></span>
               </button>
               <span
                 v-if="pair.length === 1"
@@ -360,7 +356,8 @@
             {{ missingEvents.join(", ") }} — assign one to this sample to add it.
           </p>
           <p v-if="testMode && playingEvent" class="mt-3 truncate text-[11px] text-violet-300">
-            ▶ {{ playingEvent }} — {{ ownerOf(playingEvent)?.fileName }}
+            <PhPlay :size="10" weight="fill" class="mr-1 inline" />{{ playingEvent }} —
+            {{ ownerOf(playingEvent)?.fileName }}
           </p>
 
           <template v-if="selected && !testMode">
@@ -371,7 +368,8 @@
                 title="Persist the mapping to __audiosprter.events.json in the source folder"
                 :disabled="mappingSaving"
                 @click="saveMapping()">
-                {{ mappingSaving ? "Saving…" : "💾 Save mapping" }}
+                <PhFloppyDisk :size="14" weight="bold" class="mr-1.5 inline" />
+                {{ mappingSaving ? "Saving…" : "Save mapping" }}
               </button>
               <span
                 v-if="mappingStatus"
@@ -392,6 +390,20 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } f
 import WaveSurfer from "wavesurfer.js"
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.js"
 import type { Region } from "wavesurfer.js/dist/plugins/regions.js"
+import {
+  PhArrowCounterClockwise,
+  PhArrowsCounterClockwise,
+  PhCrop,
+  PhFloppyDisk,
+  PhHeadphones,
+  PhMagicWand,
+  PhMagnifyingGlassMinus,
+  PhMagnifyingGlassPlus,
+  PhPause,
+  PhPlay,
+  PhScissors,
+  PhTrash,
+} from "@phosphor-icons/vue"
 import { useProjectStore } from "@/stores/project"
 import { encodeMp3, normalizeAudio } from "@/services/ffmpegClient"
 import { writeFileToDir } from "@/services/fsAccess"
