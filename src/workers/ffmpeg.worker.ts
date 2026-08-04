@@ -11,6 +11,7 @@ import type {
   Mp3EncodeResult,
   SelfTestFormat,
   SelfTestResult,
+  SpriteEncodeResult,
   WorkerRequest,
   WorkerResponse,
 } from "./protocol"
@@ -227,6 +228,55 @@ async function runEncodeMp3(wav: Uint8Array, bitrate: number): Promise<Mp3Encode
   return { bytes: binary, durationSec }
 }
 
+async function runEncodeSprite(wav: Uint8Array): Promise<SpriteEncodeResult> {
+  const instance = await loadFfmpeg()
+  const capabilities = await runCapabilities()
+  const verdict = detectCapabilities(capabilities.encoders, capabilities.filters)
+
+  try {
+    await instance.deleteFile("in.wav")
+  } catch {
+    // not present yet
+  }
+  await instance.writeFile("in.wav", wav)
+
+  const attempts: Array<[keyof SpriteEncodeResult, string, string, string[]]> = [
+    ["mp3", verdict.mp3.encoder, "out.mp3", ["-codec:a", verdict.mp3.encoder, "-b:a", "192k"]],
+    ["ogg", verdict.ogg.encoder, "out.ogg", ["-codec:a", verdict.ogg.encoder, "-q:a", "5"]],
+    ["m4a", verdict.m4a.encoder, "out.m4a", ["-codec:a", verdict.m4a.encoder, "-b:a", "160k"]],
+  ]
+
+  const result: SpriteEncodeResult = { mp3: null, ogg: null, m4a: null }
+  for (const [key, encoder, outFile, codecArgs] of attempts) {
+    if (encoder === "missing") {
+      pushLog([`[encode-sprite] ${key}: no encoder`])
+      continue
+    }
+    try {
+      await instance.deleteFile(outFile)
+    } catch {
+      // file may not exist yet
+    }
+    const code = await instance.exec(["-hide_banner", "-i", "in.wav", ...codecArgs, outFile])
+    if (code !== 0) {
+      pushLog([`[encode-sprite] ${key}: ffmpeg failed (code ${code})`])
+      continue
+    }
+    const data = await instance.readFile(outFile)
+    const bytes: Uint8Array<ArrayBuffer> =
+      typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data)
+    result[key] = { encoder, bytes }
+    pushLog([
+      `[encode-sprite] ${key}: ${(bytes.length / 1024 / 1024).toFixed(2)} MB via ${encoder}`,
+    ])
+  }
+
+  if (!result.mp3 && !result.ogg && !result.m4a) {
+    throw new Error("no usable encoder for any sprite format")
+  }
+  return result
+}
+
 async function runSelfTest(): Promise<SelfTestResult> {
   const capabilities = await runCapabilities()
   const verdict = detectCapabilities(capabilities.encoders, capabilities.filters)
@@ -296,7 +346,12 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
   const respond = (
     ok: boolean,
-    data?: Capabilities | SelfTestResult | LoudnessNormalizeResult | Mp3EncodeResult,
+    data?:
+      | Capabilities
+      | SelfTestResult
+      | LoudnessNormalizeResult
+      | Mp3EncodeResult
+      | SpriteEncodeResult,
     error?: string,
   ): void => {
     const response: WorkerResponse = { id, ok, data, error, logs: logTail.slice() }
@@ -313,6 +368,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       respond(true, await runNormalize(event.data.wav, event.data.targetLufs))
     } else if (kind === "encodeMp3") {
       respond(true, await runEncodeMp3(event.data.wav, event.data.bitrate))
+    } else if (kind === "encodeSprite") {
+      respond(true, await runEncodeSprite(event.data.wav))
     } else {
       respond(false, undefined, `unknown request kind: ${kind}`)
     }

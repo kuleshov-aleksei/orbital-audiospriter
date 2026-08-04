@@ -3,6 +3,7 @@ import type {
   LoudnessNormalizeResult,
   Mp3EncodeResult,
   SelfTestResult,
+  SpriteEncodeResult,
   WorkerRequest,
   WorkerResponse,
 } from "@/workers/protocol"
@@ -56,6 +57,7 @@ type RequestPayload =
   | { kind: "selftest" }
   | { kind: "normalize"; wav: Uint8Array; targetLufs: number }
   | { kind: "encodeMp3"; wav: Uint8Array; bitrate: number }
+  | { kind: "encodeSprite"; wav: Uint8Array }
 
 function request(payload: RequestPayload): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
@@ -99,6 +101,14 @@ export async function encodeMp3(wav: Uint8Array, bitrate = 192): Promise<Mp3Enco
     throw new Error(response.error || "MP3 encode failed")
   }
   return response.data as Mp3EncodeResult
+}
+
+export async function encodeSprite(wav: Uint8Array): Promise<SpriteEncodeResult> {
+  const response = await request({ kind: "encodeSprite", wav })
+  if (!response.ok || !response.data) {
+    throw new Error(response.error || "sprite encode failed")
+  }
+  return response.data as SpriteEncodeResult
 }
 
 export function getLogs(): string[] {

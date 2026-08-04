@@ -191,6 +191,42 @@
       </div>
     </section>
 
+    <section class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
+      <h3 class="text-sm font-semibold text-zinc-200">Export sprite</h3>
+      <p class="mt-1 text-xs text-zinc-500">
+        Concatenates the assigned samples (kept pieces only) with the gap above and writes
+        <code class="font-mono">{{ store.packId || "&lt;pack_id&gt;" }}.ogg/.m4a/.mp3</code> plus
+        the audiosprite <code class="font-mono">.json</code> and orbital
+        <code class="font-mono">.ts</code> to the output folder.
+      </p>
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          class="btn"
+          :disabled="exporting || !canExport"
+          :title="exportDisabledReason"
+          @click="exportSprite()">
+          {{ exporting ? "Exporting…" : "Export sprite" }}
+        </button>
+        <p
+          v-if="exportStatus"
+          class="text-sm"
+          :class="exportError ? 'text-red-400' : 'text-emerald-400'">
+          {{ exportStatus }}
+        </p>
+        <p v-else-if="!store.outputGranted" class="text-xs text-zinc-500">
+          Choose an output folder (the orbital repo) on the Home tab first.
+        </p>
+        <p v-else-if="assignedCount === 0" class="text-xs text-zinc-500">
+          No events assigned yet — assign events in the Editor first.
+        </p>
+      </div>
+      <p v-if="exporting" class="mt-2 text-xs text-zinc-500">
+        Assembling {{ assignedCount }} sample{{ assignedCount === 1 ? "" : "s" }} and encoding to
+        MP3/OGG/M4A…
+      </p>
+    </section>
+
     <section class="grid gap-3 sm:grid-cols-2">
       <div
         v-for="phase in phases"
@@ -216,8 +252,11 @@ import { useProjectStore } from "@/stores/project"
 import type { DirStatus } from "@/stores/project"
 import { listAudioFiles, writeFileToDir } from "@/services/fsAccess"
 import { buildEventMapping, loadEventMapping, saveEventMapping } from "@/services/eventMapping"
+import { encodeSprite } from "@/services/ffmpegClient"
 import type { AudioFileEntry } from "@/services/fsAccess"
 import { formatBytes } from "@/utils/format"
+import { buildAudiospriteJson, buildSoundSpriteTs, buildSprite } from "@/utils/sprite"
+import { pcmToWav16 } from "@/utils/wav"
 
 defineOptions({ name: "HomeView" })
 
@@ -234,6 +273,66 @@ const packError = ref(false)
 
 const PACK_ID_RE = /^[a-z0-9_]+$/
 const packIdValid = computed(() => PACK_ID_RE.test(store.packId))
+
+const exporting = ref(false)
+const exportStatus = ref<string | null>(null)
+const exportError = ref(false)
+
+const assignedCount = computed(
+  () => store.samples.filter((s) => s.assignedEvents.length > 0).length,
+)
+
+const canExport = computed(
+  () => store.outputGranted && assignedCount.value > 0 && packIdValid.value,
+)
+
+const exportDisabledReason = computed(() => {
+  if (!store.outputGranted) return "Choose an output folder on the Home tab first"
+  if (assignedCount.value === 0) return "Assign events to at least one sample in the Editor first"
+  if (!packIdValid.value) return "Enter a valid pack name first"
+  return ""
+})
+
+async function exportSprite(): Promise<void> {
+  const dir = store.outputDirHandle
+  if (!dir || !canExport.value || exporting.value) return
+  exporting.value = true
+  exportStatus.value = null
+  exportError.value = false
+  try {
+    await store.ensurePermission("output")
+    if (store.outputDirStatus !== "granted") {
+      throw new Error("output folder is not writable; re-grant access on the Home tab")
+    }
+    const { pack, pcm, sampleRate } = buildSprite(store.samples, store.packId, store.gap)
+    if (pack.entries.length === 0) throw new Error("no assigned events to export")
+    const wav = pcmToWav16(pcm, sampleRate)
+    const encoded = await encodeSprite(wav)
+
+    const writes: Array<[string, string, Uint8Array<ArrayBuffer> | string]> = []
+    if (encoded.mp3) writes.push([`${store.packId}.mp3`, "mp3", encoded.mp3.bytes])
+    if (encoded.ogg) writes.push([`${store.packId}.ogg`, "ogg", encoded.ogg.bytes])
+    if (encoded.m4a) writes.push([`${store.packId}.m4a`, "m4a", encoded.m4a.bytes])
+    writes.push([`${store.packId}.json`, "json", buildAudiospriteJson(store.packId, pack.entries)])
+    writes.push([`${store.packId}.ts`, "ts", buildSoundSpriteTs(store.packId, pack.entries)])
+
+    for (const [name, , data] of writes) {
+      const payload = typeof data === "string" ? new TextEncoder().encode(data) : data
+      await writeFileToDir(dir, name, payload)
+    }
+
+    const byteSummary = writes
+      .filter(([, format]) => format !== "json" && format !== "ts")
+      .map(([name, , data]) => `${name} (${formatBytes(data.length)})`)
+      .join(", ")
+    exportStatus.value = `Wrote ${writes.map(([name]) => name).join(", ")} to the output folder. ${byteSummary}`
+  } catch (error) {
+    exportError.value = true
+    exportStatus.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    exporting.value = false
+  }
+}
 
 const phases = [
   {
@@ -269,7 +368,7 @@ const phases = [
   {
     title: "Phase 7 — Sprite export",
     description: "Sample-accurate concat, 3 formats, .json + .ts generation.",
-    done: false,
+    done: true,
   },
   {
     title: "Phase 8 — Polish",

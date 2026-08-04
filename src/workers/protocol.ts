@@ -41,16 +41,30 @@ export interface Mp3EncodeResult {
   durationSec: number
 }
 
+export interface SpriteFormatData {
+  encoder: string
+  bytes: Uint8Array<ArrayBuffer>
+}
+
+export interface SpriteEncodeResult {
+  /** Present when the core build has a usable encoder for that format. */
+  mp3: SpriteFormatData | null
+  ogg: SpriteFormatData | null
+  m4a: SpriteFormatData | null
+}
+
 export type WorkerRequest =
   | { id: number; kind: "capabilities" }
   | { id: number; kind: "selftest" }
   | { id: number; kind: "normalize"; wav: Uint8Array; targetLufs: number }
   | { id: number; kind: "encodeMp3"; wav: Uint8Array; bitrate: number }
+  | { id: number; kind: "encodeSprite"; wav: Uint8Array }
 
 export interface WorkerResponse {
   id: number
   ok: boolean
-  data?: Capabilities | SelfTestResult | LoudnessNormalizeResult | Mp3EncodeResult
+  data?:
+    Capabilities | SelfTestResult | LoudnessNormalizeResult | Mp3EncodeResult | SpriteEncodeResult
   error?: string
   logs: string[]
 }
