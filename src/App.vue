@@ -24,6 +24,17 @@
             type="button"
             class="rounded-md px-3 py-1.5 text-sm transition"
             :class="
+              view === 'editor'
+                ? 'bg-violet-600/20 text-violet-300'
+                : 'text-zinc-400 hover:text-zinc-200'
+            "
+            @click="view = 'editor'">
+            Editor
+          </button>
+          <button
+            type="button"
+            class="rounded-md px-3 py-1.5 text-sm transition"
+            :class="
               view === 'spike'
                 ? 'bg-violet-600/20 text-violet-300'
                 : 'text-zinc-400 hover:text-zinc-200'
@@ -37,6 +48,7 @@
 
     <main>
       <HomeView v-if="view === 'home'" />
+      <EditorView v-else-if="view === 'editor'" />
       <SpikeView v-else />
     </main>
   </div>
@@ -45,9 +57,10 @@
 <script setup lang="ts">
 import { ref } from "vue"
 import HomeView from "@/views/HomeView.vue"
+import EditorView from "@/views/EditorView.vue"
 import SpikeView from "@/views/SpikeView.vue"
 
 defineOptions({ name: "App" })
 
-const view = ref<"home" | "spike">("home")
+const view = ref<"home" | "editor" | "spike">("home")
 </script>

@@ -84,6 +84,52 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
+  function addSample(sample: Sample): void {
+    samples.value.push(sample)
+  }
+
+  function removeSample(id: string): void {
+    samples.value = samples.value.filter((s) => s.id !== id)
+  }
+
+  function updateSampleTrim(id: string, trimStart: number, trimEnd: number): void {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample) return
+    sample.trimStart = trimStart
+    sample.trimEnd = trimEnd
+  }
+
+  function splitSample(id: string, atSeconds: number): string[] {
+    const index = samples.value.findIndex((s) => s.id === id)
+    if (index === -1) return []
+    const sample = samples.value[index]
+    if (!sample.pcm) return []
+    const cut = Math.max(0, Math.min(atSeconds, sample.duration))
+    if (cut <= sample.trimStart + 0.05 || cut >= sample.trimEnd - 0.05) return []
+
+    const dot = sample.fileName.lastIndexOf(".")
+    const base = dot > 0 ? sample.fileName.slice(0, dot) : sample.fileName
+
+    const left: Sample = {
+      ...sample,
+      id: crypto.randomUUID(),
+      fileName: `${base} (1)`,
+      fileHandle: null,
+      trimStart: sample.trimStart,
+      trimEnd: cut,
+    }
+    const right: Sample = {
+      ...sample,
+      id: crypto.randomUUID(),
+      fileName: `${base} (2)`,
+      fileHandle: null,
+      trimStart: cut,
+      trimEnd: sample.trimEnd,
+    }
+    samples.value.splice(index, 1, left, right)
+    return [left.id, right.id]
+  }
+
   function snapshot(): ProjectState {
     return {
       sourceDirHandle: sourceDirHandle.value,
@@ -113,6 +159,10 @@ export const useProjectStore = defineStore("project", () => {
     openOutputDir,
     ensurePermission,
     detachDir,
+    addSample,
+    removeSample,
+    updateSampleTrim,
+    splitSample,
     snapshot,
   }
 })

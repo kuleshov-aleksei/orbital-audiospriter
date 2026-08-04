@@ -184,7 +184,7 @@ const phases = [
   {
     title: "Phase 2 — File System Access",
     description: "Open dirs, read/write files, persist handles in IndexedDB.",
-    done: false,
+    done: true,
   },
   {
     title: "Phase 3 — Import + editor",
