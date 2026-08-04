@@ -1,4 +1,9 @@
-import type { Capabilities, SelfTestResult, WorkerRequest, WorkerResponse } from "@/workers/protocol"
+import type {
+  Capabilities,
+  SelfTestResult,
+  WorkerRequest,
+  WorkerResponse,
+} from "@/workers/protocol"
 
 let worker: Worker | null = null
 let nextId = 1

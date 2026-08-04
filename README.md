@@ -8,55 +8,58 @@ Spec: [`AUDIOSPRITER.md`](./AUDIOSPRITER.md).
 
 ## Quickstart
 
-1. Install dependencies:
-
 ```bash
-pnpm install
+make install        # pnpm install
+make dev            # Vite dev server -> http://localhost:5173
 ```
 
-2. Copy the ffmpeg core into `public/ffmpeg` (run automatically on `predev`/`prebuild`, but you can
-   run it manually):
+Open the **Spike** tab and run both checks to confirm the capability matrix in a real browser
+(streaming import from the worker cannot be exercised headlessly).
 
-```bash
-pnpm prepare:ffmpeg
-```
+## Make targets
 
-3. Run the dev server, open the **Spike** tab and run both checks:
+Conventions mirror orbital (`make help` lists everything):
 
-```bash
-pnpm dev
-```
+| Target         | Description                                     |
+| -------------- | ----------------------------------------------- |
+| `make install` | Install dependencies                            |
+| `make dev`     | Vite dev server                                 |
+| `make build`   | Production build (+ PWA service worker)         |
+| `make preview` | Preview the production build                    |
+| `make typecheck` | `vue-tsc --noEmit`                            |
+| `make lint` / `make lint-check` | ESLint with/without autofix     |
+| `make prettier`| Prettier formatter                              |
+| `make test` / `make test-run` | vitest watch / once                 |
+| `make prepare-ffmpeg` | Copy `@ffmpeg/core-st` into `public/ffmpeg` |
+| `make clean`   | Remove `dist`, `dev-dist`, `node_modules`       |
 
-## Scripts
-
-| Script             | Description                                   |
-| ------------------ | --------------------------------------------- |
-| `pnpm dev`         | Vite dev server                               |
-| `pnpm build`       | Production build (+ PWA service worker)       |
-| `pnpm preview`     | Preview the production build                  |
-| `pnpm typecheck`   | `vue-tsc --noEmit`                            |
-| `pnpm test`        | `vitest` (watch)                              |
-| `pnpm test:run`    | `vitest run`                                  |
-| `pnpm lint`        | ESLint (fix) on `src/`                        |
-| `pnpm lint:check`  | ESLint (no fix) on `src/`                     |
-| `pnpm prettier`    | Prettier write                                |
-| `pnpm prepare:ffmpeg` | Copy `@ffmpeg/core-st` umd into `public/ffmpeg` |
+Straight `pnpm` wrappers exist too: `pnpm dev`, `pnpm typecheck`, `pnpm test:run`, `pnpm lint`, etc.
 
 ## Capability matrix (Phase 1 spike)
 
-Populated from the Spike tab (also self-test encoded sizes). Fill once verified:
+### Pre-verified in the `@ffmpeg/core-st` wasm binary
 
-| Feature        | Required by   | Status |
-| -------------- | ------------- | ------ |
-| `libmp3lame`   | .mp3 (sprite + per-sample save) | ⏳ spike |
-| `libvorbis`    | .ogg (sprite)                   | ⏳ spike |
-| `aac`/`libfdk_aac` | .m4a (sprite)               | ⏳ spike |
-| `libopus`      | optional .ogg alt               | ⏳ spike |
-| `loudnorm`     | optional; fallback JS EBU R128  | ⏳ spike |
-| `volume`       | JS-gain path always available   | ⏳ spike |
+The official single-thread core ships these symbols (detected via string scan of `ffmpeg-core.wasm`):
 
-Fallbacks if missing: custom minimal core via `ffmpegwasm/ffmpeg.wasm-core` build scripts, or
-pure-JS EBU R128 normalization.
+| Feature        | Present | Required by |
+| -------------- | :-----: | ----------- |
+| `libmp3lame`   | ✓ | .mp3 (sprite + per-sample save) |
+| `libvorbis`    | ✓ | .ogg (sprite) |
+| `libopus`      | ✓ | optional .ogg alt |
+| `libfdk_aac`   | ✓ | .m4a (sprite) — prefers `libfdk_aac` over native `aac` |
+| `loudnorm`     | ✓ | optional two-pass; JS EBU R128 fallback exists |
+| `ebur128`      | ✓ | backs `loudnorm` |
+| `aresample`    | ✓ | resampling |
+| `volume`       | ✓ | JS-gain path always available |
+
+### Pending real-chrome validation (`make dev` → Spike tab)
+
+- `-encoders` / `-filters` parse through the worker
+- sine → mp3 / ogg / m4a encode self-test (byte sizes)
+- `loudnorm=I=-23` two-pass run
+
+Fallback if the browser run contradicts any row above: custom minimal core via
+`ffmpegwasm/ffmpeg.wasm-core` build scripts, or pure-JS EBU R128 normalization.
 
 ## Stack
 

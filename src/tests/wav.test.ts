@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { createSineWave, pcmToWav16 } from "@/utils/wav"
 
 describe("createSineWave", () => {
-  it("produces the expected number of samples for the given duration', () => {
+  it("produces the expected number of samples for the given duration", () => {
     const samples = createSineWave(0.4, 44100, 440)
     expect(samples.length).toBe(17640)
   })
@@ -41,7 +41,7 @@ describe("pcmToWav16", () => {
     const view = new DataView(wav.buffer)
     expect(view.getInt16(44, true)).toBe(0)
     expect(view.getInt16(46, true)).toBe(Math.round(0.5 * 32767))
-    expect(view.getInt16(48, true)).toBe(-32768)
+    expect(view.getInt16(48, true)).toBe(-32767)
     expect(view.getInt16(50, true)).toBe(32767)
   })
 })

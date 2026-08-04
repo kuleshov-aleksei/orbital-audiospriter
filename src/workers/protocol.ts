@@ -23,9 +23,7 @@ export interface SelfTestResult {
   error?: string
 }
 
-export type WorkerRequest =
-  | { id: number; kind: "capabilities" }
-  | { id: number; kind: "selftest" }
+export type WorkerRequest = { id: number; kind: "capabilities" } | { id: number; kind: "selftest" }
 
 export interface WorkerResponse {
   id: number

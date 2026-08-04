@@ -32,7 +32,12 @@ describe("parseEncoderNames", () => {
 
 describe("parseFilterNames", () => {
   it("extracts filter names", () => {
-    expect(parseFilterNames(FILTER_OUTPUT)).toEqual(["acompressor", "aresample", "loudnorm", "volume"])
+    expect(parseFilterNames(FILTER_OUTPUT)).toEqual([
+      "acompressor",
+      "aresample",
+      "loudnorm",
+      "volume",
+    ])
   })
 })
 

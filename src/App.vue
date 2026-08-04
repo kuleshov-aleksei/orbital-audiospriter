@@ -1,13 +1,3 @@
-<script setup lang="ts">
-import { ref } from "vue"
-import HomeView from "@/views/HomeView.vue"
-import SpikeView from "@/views/SpikeView.vue"
-
-defineOptions({ name: "App" })
-
-const view = ref<"home" | "spike">("home")
-</script>
-
 <template>
   <div class="min-h-screen">
     <header class="sticky top-0 z-10 border-b border-zinc-800 bg-[#0f0f14]/90 backdrop-blur">
@@ -22,17 +12,23 @@ const view = ref<"home" | "spike">("home")
           <button
             type="button"
             class="rounded-md px-3 py-1.5 text-sm transition"
-            :class="view === 'home' ? 'bg-violet-600/20 text-violet-300' : 'text-zinc-400 hover:text-zinc-200'"
-            @click="view = 'home'"
-          >
+            :class="
+              view === 'home'
+                ? 'bg-violet-600/20 text-violet-300'
+                : 'text-zinc-400 hover:text-zinc-200'
+            "
+            @click="view = 'home'">
             Home
           </button>
           <button
             type="button"
             class="rounded-md px-3 py-1.5 text-sm transition"
-            :class="view === 'spike' ? 'bg-violet-600/20 text-violet-300' : 'text-zinc-400 hover:text-zinc-200'"
-            @click="view = 'spike'"
-          >
+            :class="
+              view === 'spike'
+                ? 'bg-violet-600/20 text-violet-300'
+                : 'text-zinc-400 hover:text-zinc-200'
+            "
+            @click="view = 'spike'">
             Spike
           </button>
         </nav>
@@ -45,3 +41,13 @@ const view = ref<"home" | "spike">("home")
     </main>
   </div>
 </template>
+
+<script setup lang="ts">
+import { ref } from "vue"
+import HomeView from "@/views/HomeView.vue"
+import SpikeView from "@/views/SpikeView.vue"
+
+defineOptions({ name: "App" })
+
+const view = ref<"home" | "spike">("home")
+</script>

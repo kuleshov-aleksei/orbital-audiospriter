@@ -3,7 +3,13 @@ import { FFmpeg } from "@ffmpeg/ffmpeg"
 import { toBlobURL } from "@ffmpeg/util"
 import { createSineWave, pcmToWav16 } from "@/utils/wav"
 import { detectCapabilities, parseEncoderNames, parseFilterNames } from "@/services/capabilities"
-import type { Capabilities, SelfTestFormat, SelfTestResult, WorkerRequest, WorkerResponse } from "./protocol"
+import type {
+  Capabilities,
+  SelfTestFormat,
+  SelfTestResult,
+  WorkerRequest,
+  WorkerResponse,
+} from "./protocol"
 
 declare const self: DedicatedWorkerGlobalScope
 
@@ -39,7 +45,9 @@ async function loadFfmpeg(): Promise<FFmpeg> {
 
   ffmpeg = loaded
   coreInfo = { sizeBytes: blob.size, loadTimeMs: Math.round(performance.now() - started) }
-  pushLog([`[core] loaded in ${coreInfo.loadTimeMs} ms (${(blob.size / 1024 / 1024).toFixed(1)} MB wasm)`])
+  pushLog([
+    `[core] loaded in ${coreInfo.loadTimeMs} ms (${(blob.size / 1024 / 1024).toFixed(1)} MB wasm)`,
+  ])
   return loaded
 }
 
