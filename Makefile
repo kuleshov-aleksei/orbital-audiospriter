@@ -93,7 +93,7 @@ docker-build:
 
 docker-up:
 	@echo "Starting with Docker Compose (version: $(VERSION))..."
-	VERSION=$(VERSION) docker compose up -d
+	VERSION=$(VERSION) docker compose up -d --build
 
 docker-down:
 	@echo "Stopping Docker Compose..."

@@ -1,5 +1,10 @@
 services:
   audiospriter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
     image: orbital-audiospriter:${VERSION:-dev}
     restart: unless-stopped
     ports:
