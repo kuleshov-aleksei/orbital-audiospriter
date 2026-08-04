@@ -157,29 +157,6 @@
               @click="zoomBy(1)">
               <PhMagnifyingGlassPlus :size="14" weight="bold" class="inline" />
             </button>
-            <span class="h-4 w-px bg-zinc-700"></span>
-            <label class="text-xs text-zinc-500">
-              Piece in
-              <input
-                v-model.number="chunkIn"
-                type="number"
-                :min="0"
-                :max="selected ? selected.duration : 0"
-                step="0.01"
-                class="ml-1 w-20 rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-xs text-zinc-200"
-                @change="commitChunkRange()" />
-            </label>
-            <label class="text-xs text-zinc-500">
-              Piece out
-              <input
-                v-model.number="chunkOut"
-                type="number"
-                :min="0"
-                :max="selected ? selected.duration : 0"
-                step="0.01"
-                class="ml-1 w-20 rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-xs text-zinc-200"
-                @change="commitChunkRange()" />
-            </label>
           </div>
 
           <div v-if="selected" class="mt-3 flex flex-wrap items-center gap-2">
@@ -493,9 +470,6 @@ const canMakeSfx = computed(() => {
   return !!selectedChunk.value && selected.value.chunks.length > 1
 })
 
-const chunkIn = ref(0)
-const chunkOut = ref(0)
-
 const selection = ref<{ start: number; end: number } | null>(null)
 let selectionRegion: Region | null = null
 let dragSelecting = false
@@ -606,12 +580,6 @@ function keptDurationOf(sample: Sample): number {
   return chunksTotalDuration(sample.chunks)
 }
 
-function syncChunkInputs(): void {
-  const chunk = selectedChunk.value
-  chunkIn.value = chunk ? chunk.start : 0
-  chunkOut.value = chunk ? chunk.end : 0
-}
-
 function applySelectionColor(): void {
   for (const [chunkId, region] of regionByChunk) {
     const isSelected = chunkId === selectedChunkId.value
@@ -625,7 +593,6 @@ function applySelectionColor(): void {
 function selectChunk(chunkId: string): void {
   selectedChunkId.value = chunkId
   applySelectionColor()
-  syncChunkInputs()
 }
 
 async function loadSample(id: string, preserveChunk = false): Promise<void> {
@@ -670,7 +637,6 @@ async function loadSample(id: string, preserveChunk = false): Promise<void> {
       ? previousChunkId
       : (sample.chunks[0]?.id ?? null)
   applySelectionColor()
-  syncChunkInputs()
   wavesurferReady.value = true
 }
 
@@ -794,22 +760,6 @@ function extractSelectedChunk(): void {
   }
 }
 
-function commitChunkRange(): void {
-  const sample = selected.value
-  const chunk = selectedChunk.value
-  if (!sample || !chunk) return
-  const start = Number(chunkIn.value)
-  const end = Number(chunkOut.value)
-  if (Number.isNaN(start) || Number.isNaN(end)) return
-  pushUndo()
-  if (store.setChunkRange(sample.id, chunk.id, start, end)) {
-    void loadSample(sample.id, true)
-  } else {
-    undoStack.value.pop()
-    syncChunkInputs()
-  }
-}
-
 function togglePlay(): void {
   if (!wavesurfer) return
   void wavesurfer.playPause()
@@ -840,6 +790,11 @@ function handleKeydown(event: KeyboardEvent): void {
       target.tagName === "BUTTON" ||
       target.isContentEditable)
   ) {
+    return
+  }
+  if ((event.metaKey || event.ctrlKey) && event.code === "KeyZ") {
+    event.preventDefault()
+    undoChunks()
     return
   }
   if (event.metaKey || event.ctrlKey || event.altKey) return
