@@ -7,18 +7,22 @@ export const EVENT_MAPPING_FILE = "__audiosprter.events.json"
 
 export interface EventMapping {
   version: 1
+  /** Sprite pack name used at export time (snake_case). */
+  packId: string
+  /** Seconds of silence between samples in the exported sprite. */
+  gap: number
   /** fileName -> assigned events (fileName is stable across imports). */
   samples: Record<string, OrbitalEvent[]>
 }
 
-export function buildEventMapping(samples: Sample[]): EventMapping {
+export function buildEventMapping(samples: Sample[], packId: string, gap: number): EventMapping {
   const samplesMap: Record<string, OrbitalEvent[]> = {}
   for (const sample of samples) {
     if (sample.assignedEvents.length > 0) {
       samplesMap[sample.fileName] = [...sample.assignedEvents]
     }
   }
-  return { version: 1, samples: samplesMap }
+  return { version: 1, packId, gap, samples: samplesMap }
 }
 
 /** Drop events that are not in the canonical list; keep known ones only. */
@@ -44,7 +48,12 @@ export function parseEventMapping(text: string): EventMapping | null {
     const clean = sanitizeEvents(events)
     if (clean.length > 0) samples[name] = clean
   }
-  return { version: 1, samples }
+  return {
+    version: 1,
+    packId: typeof obj.packId === "string" ? obj.packId : "",
+    gap: typeof obj.gap === "number" && Number.isFinite(obj.gap) ? obj.gap : 0,
+    samples,
+  }
 }
 
 export async function saveEventMapping(

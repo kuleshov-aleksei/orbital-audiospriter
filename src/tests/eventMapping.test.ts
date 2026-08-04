@@ -25,16 +25,19 @@ function makeSample(fileName: string, events: Sample["assignedEvents"]): Sample 
 
 describe("buildEventMapping", () => {
   it("keeps only samples that have assignments, keyed by file name", () => {
-    const mapping = buildEventMapping([
-      makeSample("bell.wav", ["mute", "unmute"]),
-      makeSample("quiet.mp3", []),
-    ])
+    const mapping = buildEventMapping(
+      [makeSample("bell.wav", ["mute", "unmute"]), makeSample("quiet.mp3", [])],
+      "my_new_pack",
+      0.05,
+    )
     expect(mapping.version).toBe(1)
+    expect(mapping.packId).toBe("my_new_pack")
+    expect(mapping.gap).toBe(0.05)
     expect(mapping.samples).toEqual({ "bell.wav": ["mute", "unmute"] })
   })
 
   it("returns an empty map when nothing is assigned", () => {
-    expect(buildEventMapping([makeSample("a.wav", [])]).samples).toEqual({})
+    expect(buildEventMapping([makeSample("a.wav", [])], "pack", 0).samples).toEqual({})
   })
 })
 
@@ -42,14 +45,27 @@ describe("parseEventMapping", () => {
   it("round-trips a serialized mapping", () => {
     const mapping: EventMapping = {
       version: 1,
+      packId: "my_pack",
+      gap: 0.25,
       samples: { "bell.wav": ["mute", "unmute"], "pop.mp3": ["message"] },
     }
     expect(parseEventMapping(JSON.stringify(mapping))).toEqual(mapping)
   })
 
+  it("defaults packId and gap when absent (older files)", () => {
+    const parsed = parseEventMapping(JSON.stringify({ version: 1, samples: { "a.wav": ["mute"] } }))
+    expect(parsed?.packId).toBe("")
+    expect(parsed?.gap).toBe(0)
+  })
+
   it("drops unknown event names", () => {
     const parsed = parseEventMapping(
-      JSON.stringify({ version: 1, samples: { "a.wav": ["mute", "not_an_event"] } }),
+      JSON.stringify({
+        version: 1,
+        packId: "p",
+        gap: 0,
+        samples: { "a.wav": ["mute", "not_an_event"] },
+      }),
     )
     expect(parsed?.samples["a.wav"]).toEqual(["mute"])
   })
@@ -63,10 +79,12 @@ describe("parseEventMapping", () => {
 })
 
 describe("applyEventMapping", () => {
+  const base = { version: 1, packId: "", gap: 0 } as const
+
   it("restores assignments onto samples by file name", () => {
     const samples = [makeSample("bell.wav", []), makeSample("pop.mp3", ["mute"])]
     applyEventMapping(samples, {
-      version: 1,
+      ...base,
       samples: { "bell.wav": ["join_room"], "missing.wav": ["message"] },
     })
     expect(samples[0].assignedEvents).toEqual(["join_room"])
@@ -75,7 +93,7 @@ describe("applyEventMapping", () => {
 
   it("leaves samples with no entry untouched", () => {
     const samples = [makeSample("bell.wav", [])]
-    applyEventMapping(samples, { version: 1, samples: {} })
+    applyEventMapping(samples, { ...base, samples: {} })
     expect(samples[0].assignedEvents).toEqual([])
   })
 
@@ -86,7 +104,7 @@ describe("applyEventMapping", () => {
       makeSample("click.ogg", []),
     ]
     applyEventMapping(samples, {
-      version: 1,
+      ...base,
       samples: {
         "bell.wav": ["mute"],
         "pop.mp3": ["mute", "unmute"],

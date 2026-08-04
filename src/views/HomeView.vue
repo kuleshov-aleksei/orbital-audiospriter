@@ -139,6 +139,58 @@
       </div>
     </section>
 
+    <section class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
+      <h3 class="text-sm font-semibold text-zinc-200">Sprite pack</h3>
+      <p class="mt-1 text-xs text-zinc-500">
+        Name of the audio sprite (snake_case, used as the file base name at export) and the silence
+        gap between samples. Saved to the project mapping file.
+      </p>
+      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <label class="text-xs text-zinc-500">
+          Pack name
+          <input
+            v-model="store.packId"
+            type="text"
+            placeholder="e.g. my_new_pack"
+            class="mt-1 w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200"
+            :class="{ 'border-red-500/60': !packIdValid }"
+            spellcheck="false" />
+        </label>
+        <label class="text-xs text-zinc-500">
+          Gap between samples (s)
+          <input
+            v-model.number="store.gap"
+            type="number"
+            min="0"
+            max="5"
+            step="0.01"
+            class="mt-1 w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200" />
+        </label>
+      </div>
+      <p v-if="!packIdValid" class="mt-2 text-xs text-red-400">
+        Use lowercase letters, numbers and underscores only (e.g.
+        <code class="font-mono">my_new_pack</code>).
+      </p>
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          class="btn"
+          :disabled="!packIdValid || packSaving"
+          @click="savePack()">
+          {{ packSaving ? "Saving…" : "Save pack settings" }}
+        </button>
+        <p
+          v-if="packStatus"
+          class="text-sm"
+          :class="packError ? 'text-red-400' : 'text-emerald-400'">
+          {{ packStatus }}
+        </p>
+        <p v-else class="text-xs text-zinc-500">
+          Persists the pack name + gap to <code class="font-mono">__audiosprter.events.json</code>.
+        </p>
+      </div>
+    </section>
+
     <section class="grid gap-3 sm:grid-cols-2">
       <div
         v-for="phase in phases"
@@ -159,10 +211,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { useProjectStore } from "@/stores/project"
 import type { DirStatus } from "@/stores/project"
 import { listAudioFiles, writeFileToDir } from "@/services/fsAccess"
+import { buildEventMapping, loadEventMapping, saveEventMapping } from "@/services/eventMapping"
 import type { AudioFileEntry } from "@/services/fsAccess"
 import { formatBytes } from "@/utils/format"
 
@@ -174,6 +227,13 @@ const files = ref<AudioFileEntry[]>([])
 const filesError = ref<string | null>(null)
 const probeStatus = ref<"idle" | "writing" | "done" | "error">("idle")
 const probeError = ref<string | null>(null)
+
+const packSaving = ref(false)
+const packStatus = ref<string | null>(null)
+const packError = ref(false)
+
+const PACK_ID_RE = /^[a-z0-9_]+$/
+const packIdValid = computed(() => PACK_ID_RE.test(store.packId))
 
 const phases = [
   {
@@ -303,9 +363,39 @@ async function probeWrite(): Promise<void> {
   }
 }
 
+async function savePack(): Promise<void> {
+  const dir = store.sourceDirHandle
+  if (!dir || !packIdValid.value) return
+  packSaving.value = true
+  packStatus.value = null
+  packError.value = false
+  try {
+    await store.ensurePermission("source")
+    if (store.sourceDirStatus !== "granted") {
+      throw new Error("source folder is not writable; re-grant access on the Home tab")
+    }
+    const mapping = buildEventMapping(store.samples, store.packId, store.gap)
+    await saveEventMapping(dir, mapping)
+    packStatus.value = `Saved ${store.packId} to the mapping file`
+  } catch (error) {
+    packError.value = true
+    packStatus.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    packSaving.value = false
+  }
+}
+
 onMounted(async () => {
   await store.restoreFromIndexedDb()
   await refreshFiles()
+  const dir = store.sourceDirHandle
+  if (dir) {
+    const mapping = await loadEventMapping(dir)
+    if (mapping) {
+      if (mapping.packId) store.packId = mapping.packId
+      if (mapping.gap) store.gap = mapping.gap
+    }
+  }
 })
 </script>
 

@@ -1052,7 +1052,7 @@ async function saveMapping(): Promise<void> {
     if (store.sourceDirStatus !== "granted") {
       throw new Error("source folder is not writable; re-grant access on the Home tab")
     }
-    const mapping = buildEventMapping(store.samples)
+    const mapping = buildEventMapping(store.samples, store.packId, store.gap)
     await saveEventMapping(dir, mapping)
     mappingStatus.value = `Saved ${EVENT_MAPPING_FILE} (${Object.keys(mapping.samples).length} samples)`
   } catch (error) {
@@ -1067,7 +1067,11 @@ async function restoreMapping(): Promise<void> {
   const dir = store.sourceDirHandle
   if (!dir) return
   const mapping = await loadEventMapping(dir)
-  if (mapping) applyEventMapping(store.samples, mapping)
+  if (mapping) {
+    if (mapping.packId) store.packId = mapping.packId
+    if (mapping.gap) store.gap = mapping.gap
+    applyEventMapping(store.samples, mapping)
+  }
 }
 
 onMounted(() => {
