@@ -1,7 +1,8 @@
 import { defineStore } from "pinia"
 import { computed, ref } from "vue"
-import type { ProjectState, Sample } from "@/types/audio"
+import type { ProjectState, Sample, SampleChunk } from "@/types/audio"
 import { DEFAULT_TARGET_LUFS } from "@/types/audio"
+import { clampChunkRange, removeChunkById, splitChunkAt } from "@/utils/chunks"
 import {
   clearDirectoryHandle,
   openDirectoryPicker,
@@ -92,42 +93,52 @@ export const useProjectStore = defineStore("project", () => {
     samples.value = samples.value.filter((s) => s.id !== id)
   }
 
-  function updateSampleTrim(id: string, trimStart: number, trimEnd: number): void {
+  function setChunks(id: string, chunks: SampleChunk[]): void {
     const sample = samples.value.find((s) => s.id === id)
-    if (!sample) return
-    sample.trimStart = trimStart
-    sample.trimEnd = trimEnd
+    if (sample) sample.chunks = chunks
   }
 
-  function splitSample(id: string, atSeconds: number): string[] {
-    const index = samples.value.findIndex((s) => s.id === id)
-    if (index === -1) return []
-    const sample = samples.value[index]
-    if (!sample.pcm) return []
-    const cut = Math.max(0, Math.min(atSeconds, sample.duration))
-    if (cut <= sample.trimStart + 0.05 || cut >= sample.trimEnd - 0.05) return []
+  /**
+   * Split the chunk containing the given playback time (spliced). Returns the
+   * id of the right-hand chunk when a cut happened, otherwise null.
+   */
+  function cutSample(id: string, atSplicedSeconds: number): string | null {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample || !sample.pcm) return null
+    const next = splitChunkAt(sample.chunks, atSplicedSeconds, sample.sampleRate)
+    if (!next) return null
+    sample.chunks = next
+    return next[1]?.id ?? null
+  }
 
-    const dot = sample.fileName.lastIndexOf(".")
-    const base = dot > 0 ? sample.fileName.slice(0, dot) : sample.fileName
+  /**
+   * Ripple-delete a chunk. When no chunks remain the sample is removed.
+   * Returns true when the sample was removed entirely.
+   */
+  function deleteChunk(id: string, chunkId: string): boolean {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample) return false
+    const next = removeChunkById(sample.chunks, chunkId)
+    if (next.length === sample.chunks.length) return false
+    if (next.length === 0) {
+      removeSample(id)
+      return true
+    }
+    sample.chunks = next
+    return false
+  }
 
-    const left: Sample = {
-      ...sample,
-      id: crypto.randomUUID(),
-      fileName: `${base} (1)`,
-      fileHandle: null,
-      trimStart: sample.trimStart,
-      trimEnd: cut,
-    }
-    const right: Sample = {
-      ...sample,
-      id: crypto.randomUUID(),
-      fileName: `${base} (2)`,
-      fileHandle: null,
-      trimStart: cut,
-      trimEnd: sample.trimEnd,
-    }
-    samples.value.splice(index, 1, left, right)
-    return [left.id, right.id]
+  /** Adjust a chunk's absolute boundaries (clamped to neighbours). */
+  function setChunkRange(id: string, chunkId: string, start: number, end: number): boolean {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample) return false
+    const range = clampChunkRange(sample.chunks, chunkId, start, end, sample.duration)
+    if (!range) return false
+    const chunk = sample.chunks.find((c) => c.id === chunkId)
+    if (!chunk) return false
+    chunk.start = range.start
+    chunk.end = range.end
+    return true
   }
 
   function snapshot(): ProjectState {
@@ -161,8 +172,10 @@ export const useProjectStore = defineStore("project", () => {
     detachDir,
     addSample,
     removeSample,
-    updateSampleTrim,
-    splitSample,
+    setChunks,
+    cutSample,
+    deleteChunk,
+    setChunkRange,
     snapshot,
   }
 })

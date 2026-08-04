@@ -34,15 +34,27 @@ export const ORBITAL_EVENTS: readonly OrbitalEvent[] = [
   "viewer_left",
 ]
 
+export interface SampleChunk {
+  id: string
+  /** absolute seconds within the source pcm (unedited) */
+  start: number
+  end: number
+}
+
 export interface Sample {
   id: string
   fileName: string
   fileHandle: FileSystemFileHandle | null
   pcm: Float32Array | null
   sampleRate: number
+  /** duration of the source pcm in seconds (unedited) */
   duration: number
-  trimStart: number
-  trimEnd: number
+  /**
+   * The kept parts of the sample, in playback order. Absolute offsets into
+   * `pcm`. A cut splits a chunk; deleting a chunk removes it (ripple delete:
+   * remaining chunks play back-to-back).
+   */
+  chunks: SampleChunk[]
   loudness?: LoudnessResult
   targetLufs: number
   assignedEvents: OrbitalEvent[]
