@@ -1,0 +1,6 @@
+services:
+  audiospriter:
+    image: orbital-audiospriter:${VERSION:-dev}
+    restart: unless-stopped
+    ports:
+      - "8026:8000"
