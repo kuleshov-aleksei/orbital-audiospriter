@@ -1,7 +1,7 @@
 import { defineStore } from "pinia"
 import { computed, ref } from "vue"
 import type { LoudnessResult, OrbitalEvent, ProjectState, Sample, SampleChunk } from "@/types/audio"
-import { DEFAULT_TARGET_LUFS } from "@/types/audio"
+import { DEFAULT_GAP, DEFAULT_TARGET_LUFS } from "@/types/audio"
 import { clampChunkRange, removeChunkById, splitChunkAt } from "@/utils/chunks"
 import {
   clearDirectoryHandle,
@@ -23,7 +23,7 @@ export const useProjectStore = defineStore("project", () => {
   const samples = ref<Sample[]>([])
   const targetLufs = ref<number>(DEFAULT_TARGET_LUFS)
   const packId = ref<string>("")
-  const gap = ref<number>(0)
+  const gap = ref<number>(DEFAULT_GAP)
 
   const hasSourceDir = computed(() => sourceDirHandle.value !== null)
   const hasOutputDir = computed(() => outputDirHandle.value !== null)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { createPinia, setActivePinia } from "pinia"
 import { useProjectStore } from "@/stores/project"
-import { DEFAULT_TARGET_LUFS } from "@/types/audio"
+import { DEFAULT_GAP, DEFAULT_TARGET_LUFS } from "@/types/audio"
 import type { Sample, SampleChunk } from "@/types/audio"
 
 function makeSample(overrides: Partial<Sample> = {}): Sample {
@@ -24,6 +24,13 @@ function chunkIds(chunks: SampleChunk[]): string[] {
 }
 
 describe("project store cut/delete chunks", () => {
+  it("defaults the sprite gap to 0.2s", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    expect(store.gap).toBe(DEFAULT_GAP)
+    expect(store.gap).toBe(0.2)
+  })
+
   it("cuts a chunk into two at the spliced time and returns the right chunk", () => {
     setActivePinia(createPinia())
     const store = useProjectStore()

@@ -90,3 +90,5 @@ export interface ProjectState {
 }
 
 export const DEFAULT_TARGET_LUFS = -23
+
+export const DEFAULT_GAP = 0.2
