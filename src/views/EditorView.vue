@@ -280,38 +280,66 @@
         <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
           <div class="flex items-center justify-between gap-2">
             <h3 class="text-sm font-semibold text-zinc-200">Event assignment</h3>
-            <span class="text-[11px] text-zinc-500"
-              >{{ coveredCount }}/{{ ORBITAL_EVENTS.length }}</span
-            >
-          </div>
-          <p v-if="!selected" class="mt-2 text-xs text-zinc-500">
-            Select a sample to assign orbital events.
-          </p>
-          <template v-else>
-            <p class="mt-2 text-xs text-zinc-500">
-              Click an event to assign it to
-              <span class="text-zinc-300">{{ selected.fileName }}</span
-              >. A sample may hold several events (aliases share the same timing).
-            </p>
-            <div class="mt-3 flex flex-wrap gap-1">
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] text-zinc-500"
+                >{{ coveredCount }}/{{ ORBITAL_EVENTS.length }}</span
+              >
               <button
-                v-for="event in ORBITAL_EVENTS"
-                :key="event"
                 type="button"
-                class="rounded border px-2 py-1 text-[11px] transition"
-                :class="eventClasses(event)"
-                :title="eventTooltip(event)"
-                @click="toggleEvent(event)">
-                <span
-                  class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
-                  :class="coveredEvents.has(event) ? 'bg-emerald-400' : 'bg-amber-400'"></span>
-                {{ event }}
+                class="rounded px-2 py-0.5 text-[11px] font-medium transition"
+                :class="
+                  testMode
+                    ? 'bg-violet-600/20 text-violet-300 ring-1 ring-violet-500/60'
+                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                "
+                :title="testMode ? 'Back to assigning events' : 'Listen to assigned samples'"
+                @click="toggleTestMode()">
+                {{ testMode ? "🎧 Testing" : "🎧 Test" }}
               </button>
             </div>
-            <p v-if="missingEvents.length > 0" class="mt-3 text-[11px] text-zinc-500">
-              <span class="text-amber-400">Not covered:</span>
-              {{ missingEvents.join(", ") }} — assign one to this sample to add it.
-            </p>
+          </div>
+          <p v-if="testMode" class="mt-2 text-xs text-zinc-500">
+            Click an event to hear its assigned sample; click the same event again to stop.
+          </p>
+          <p v-else-if="!selected" class="mt-2 text-xs text-zinc-500">
+            Select a sample to assign orbital events.
+          </p>
+
+          <div class="mt-3 flex flex-col gap-1">
+            <div v-for="pair in EVENT_PAIRS" :key="pair[0]" class="grid grid-cols-2 gap-1">
+              <button
+                v-for="event in pair"
+                :key="event"
+                type="button"
+                class="truncate rounded border px-2 py-1 text-left text-[11px] transition"
+                :class="eventClasses(event)"
+                :title="eventTooltip(event)"
+                @click="onEventClick(event)">
+                <span
+                  class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
+                  :class="statusDotClass(event)"></span>
+                {{ event }}
+                <span
+                  v-if="testMode && playingEvent === event"
+                  class="ml-1 text-[10px] text-violet-300"
+                  >▶</span
+                >
+              </button>
+              <span
+                v-if="pair.length === 1"
+                class="rounded border border-transparent px-2 py-1"></span>
+            </div>
+          </div>
+
+          <p v-if="missingEvents.length > 0 && !testMode" class="mt-3 text-[11px] text-zinc-500">
+            <span class="text-amber-400">Not covered:</span>
+            {{ missingEvents.join(", ") }} — assign one to this sample to add it.
+          </p>
+          <p v-if="testMode && playingEvent" class="mt-3 truncate text-[11px] text-violet-300">
+            ▶ {{ playingEvent }} — {{ ownerOf(playingEvent)?.fileName }}
+          </p>
+
+          <template v-if="selected && !testMode">
             <div class="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -357,6 +385,7 @@ import { chunksTotalDuration, spliceChunks } from "@/utils/chunks"
 import { measureLoudness } from "@/utils/loudness"
 import { pcmToWav16 } from "@/utils/wav"
 import { formatBytes, replaceExtension } from "@/utils/format"
+import { disposePcmPreview, playPcmPreview, stopPcmPreview } from "@/utils/playback"
 
 defineOptions({ name: "EditorView" })
 
@@ -380,6 +409,19 @@ const saveSuccess = ref<string | null>(null)
 const mappingSaving = ref(false)
 const mappingStatus = ref<string | null>(null)
 const mappingError = ref(false)
+
+const EVENT_PAIRS: readonly (readonly string[])[] = [
+  ["join_room", "leave_room"],
+  ["mute", "unmute"],
+  ["deafen", "undeafen"],
+  ["camera_start", "camera_stop"],
+  ["screenshare_start", "screenshare_stop"],
+  ["viewer_joined", "viewer_left"],
+  ["message"],
+]
+
+const testMode = ref(false)
+const playingEvent = ref<string | null>(null)
 
 const importing = ref(false)
 const importDone = ref(0)
@@ -926,7 +968,26 @@ const missingEvents = computed(() =>
   ORBITAL_EVENTS.filter((event) => !coveredEvents.value.has(event)),
 )
 
+function ownerOf(event: string): Sample | null {
+  return (
+    store.samples.find(
+      (s) => s.assignedEvents.includes(event as Sample["assignedEvents"][number]) && s.pcm,
+    ) ?? null
+  )
+}
+
+function statusDotClass(event: string): string {
+  if (playingEvent.value === event) return "bg-violet-400"
+  return coveredEvents.value.has(event) ? "bg-emerald-400" : "bg-amber-400"
+}
+
 function eventTooltip(event: string): string {
+  if (testMode.value) {
+    const owner = ownerOf(event)
+    if (playingEvent.value === event) return `${event} — stop playback`
+    if (owner) return `${event} — play ${owner.fileName}`
+    return `${event} — no sample assigned`
+  }
   const onSelected = selected.value?.assignedEvents.includes(
     event as Sample["assignedEvents"][number],
   )
@@ -937,6 +998,12 @@ function eventTooltip(event: string): string {
 }
 
 function eventClasses(event: string): string {
+  if (testMode.value) {
+    if (playingEvent.value === event) return "border-violet-600/60 bg-violet-600/20 text-violet-200"
+    if (coveredEvents.value.has(event))
+      return "border-zinc-700 bg-zinc-800/40 text-zinc-300 hover:border-zinc-600"
+    return "border-amber-500/40 bg-amber-500/5 text-amber-200/80 hover:bg-amber-500/10"
+  }
   const onSelected = selected.value?.assignedEvents.includes(
     event as Sample["assignedEvents"][number],
   )
@@ -946,7 +1013,27 @@ function eventClasses(event: string): string {
   return "border-amber-500/40 bg-amber-500/5 text-amber-200/80 hover:bg-amber-500/10"
 }
 
-function toggleEvent(event: string): void {
+function toggleTestMode(): void {
+  testMode.value = !testMode.value
+  if (!testMode.value) {
+    stopPcmPreview()
+    playingEvent.value = null
+  }
+}
+
+function onEventClick(event: string): void {
+  if (testMode.value) {
+    const owner = ownerOf(event)
+    if (playingEvent.value === event || !owner?.pcm) {
+      stopPcmPreview()
+      playingEvent.value = null
+      return
+    }
+    const spliced = spliceChunks(owner.pcm, owner.chunks, owner.sampleRate)
+    playPcmPreview(spliced, owner.sampleRate)
+    playingEvent.value = event
+    return
+  }
   const sample = selected.value
   if (!sample) return
   store.toggleAssignedEvent(sample.id, event as Sample["assignedEvents"][number])
@@ -994,6 +1081,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeydown)
   wavesurfer?.destroy()
+  disposePcmPreview()
 })
 </script>
 
