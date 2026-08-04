@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createSineWave, pcmToWav16, wav16ToPcm } from "@/utils/wav"
+import { createSineWave, pcmToWav16, wav16ToPcm, wavDurationSec } from "@/utils/wav"
 
 describe("createSineWave", () => {
   it("produces the expected number of samples for the given duration", () => {
@@ -90,5 +90,36 @@ describe("wav16ToPcm", () => {
     wav[20] = 3 // make it a float wav
     expect(() => wav16ToPcm(wav)).toThrow()
     expect(() => wav16ToPcm(new Uint8Array(10))).toThrow()
+  })
+})
+
+describe("wavDurationSec", () => {
+  it("reads duration from a 16-bit PCM header", () => {
+    const wav = pcmToWav16(new Float32Array(44100), 44100)
+    expect(wavDurationSec(wav)).toBeCloseTo(1, 5)
+  })
+
+  it("accounts for channels and bit depth", () => {
+    const wav = new Uint8Array(44 + 4 * 2)
+    const view = new DataView(wav.buffer)
+    const put = (i: number, s: string) => {
+      for (let j = 0; j < s.length; j++) wav[i + j] = s.charCodeAt(j)
+    }
+    put(0, "RIFF")
+    put(8, "WAVE")
+    put(12, "fmt ")
+    view.setUint32(16, 16, true)
+    view.setUint16(20, 1, true)
+    view.setUint16(22, 2, true) // stereo
+    view.setUint32(24, 8000, true)
+    view.setUint16(32, 2, true)
+    view.setUint16(34, 16, true)
+    put(36, "data")
+    view.setUint32(40, 8, true) // 2 frames * 2ch * 2 bytes
+    expect(wavDurationSec(wav)).toBeCloseTo(2 / 8000, 5)
+  })
+
+  it("returns 0 for a header shorter than 44 bytes", () => {
+    expect(wavDurationSec(new Uint8Array(10))).toBe(0)
   })
 })

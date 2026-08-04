@@ -4,9 +4,11 @@ import { toBlobURL } from "@ffmpeg/util"
 import { createSineWave, pcmToWav16, wav16ToPcm } from "@/utils/wav"
 import { detectCapabilities, parseEncoderNames, parseFilterNames } from "@/services/capabilities"
 import { measureLoudness, parseLoudnormJson } from "@/utils/loudness"
+import { wavDurationSec } from "@/utils/wav"
 import type {
   Capabilities,
   LoudnessNormalizeResult,
+  Mp3EncodeResult,
   SelfTestFormat,
   SelfTestResult,
   WorkerRequest,
@@ -101,6 +103,15 @@ async function hasLoudnorm(): Promise<boolean> {
   return loudnormAvailable
 }
 
+/** Resolve a usable MP3 encoder name from the core build, cached. */
+async function preferMp3Encoder(): Promise<string | undefined> {
+  const capabilities = await runCapabilities()
+  for (const name of ["libmp3lame", "mp3lame", "mp3"]) {
+    if (capabilities.encoders.includes(name)) return name
+  }
+  return undefined
+}
+
 const LOUDNORM_LIMITS = "LRA=7:TP=-1.5"
 
 /**
@@ -168,6 +179,52 @@ async function runNormalize(wav: Uint8Array, targetLufs: number): Promise<Loudne
     `[normalize] EBU R128 fallback: ${measured.integratedLufs.toFixed(1)} LUFS -> ${targetLufs} LUFS, gain ${gainDb.toFixed(2)} dB`,
   ])
   return result
+}
+
+/**
+ * Encode a mono WAV to CBR MP3 and return the bytes. Used for per-sample
+ * save-back (spec step 8, `libmp3lame -b:a 192k`).
+ */
+async function runEncodeMp3(wav: Uint8Array, bitrate: number): Promise<Mp3EncodeResult> {
+  const instance = await loadFfmpeg()
+  const encoder = await preferMp3Encoder()
+  if (!encoder) {
+    throw new Error("this ffmpeg build has no MP3 encoder")
+  }
+  try {
+    await instance.deleteFile("in.wav")
+  } catch {
+    // not present yet
+  }
+  try {
+    await instance.deleteFile("out.mp3")
+  } catch {
+    // not present yet
+  }
+  await instance.writeFile("in.wav", wav)
+  const code = await instance.exec([
+    "-hide_banner",
+    "-i",
+    "in.wav",
+    "-ac",
+    "1",
+    "-codec:a",
+    encoder,
+    "-b:a",
+    `${bitrate}k`,
+    "out.mp3",
+  ])
+  if (code !== 0) {
+    throw new Error(`MP3 encode failed (code ${code})`)
+  }
+  const data = await instance.readFile("out.mp3")
+  const binary: Uint8Array<ArrayBuffer> =
+    typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data)
+  const durationSec = wavDurationSec(wav)
+  pushLog([
+    `[encode] mp3: ${(binary.length / 1024 / 1024).toFixed(2)} MB, ${durationSec.toFixed(2)} s, ${bitrate}kbps`,
+  ])
+  return { bytes: binary, durationSec }
 }
 
 async function runSelfTest(): Promise<SelfTestResult> {
@@ -239,7 +296,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
   const respond = (
     ok: boolean,
-    data?: Capabilities | SelfTestResult | LoudnessNormalizeResult,
+    data?: Capabilities | SelfTestResult | LoudnessNormalizeResult | Mp3EncodeResult,
     error?: string,
   ): void => {
     const response: WorkerResponse = { id, ok, data, error, logs: logTail.slice() }
@@ -254,6 +311,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       respond(true, await runSelfTest())
     } else if (kind === "normalize") {
       respond(true, await runNormalize(event.data.wav, event.data.targetLufs))
+    } else if (kind === "encodeMp3") {
+      respond(true, await runEncodeMp3(event.data.wav, event.data.bitrate))
     } else {
       respond(false, undefined, `unknown request kind: ${kind}`)
     }

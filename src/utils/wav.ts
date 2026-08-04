@@ -39,6 +39,19 @@ export interface Wav16Data {
   sampleRate: number
 }
 
+/** Duration in seconds read from a PCM WAV header (0 when unreadable/silent). */
+export function wavDurationSec(bytes: Uint8Array): number {
+  if (bytes.length < 44) return 0
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const sampleRate = view.getUint32(24, true)
+  const channels = view.getUint16(22, true)
+  const bitsPerSample = view.getUint16(34, true)
+  const dataSize = view.getUint32(40, true)
+  const bytesPerFrame = channels * (bitsPerSample / 8)
+  if (sampleRate <= 0 || bytesPerFrame <= 0) return 0
+  return dataSize / bytesPerFrame / sampleRate
+}
+
 export function wav16ToPcm(bytes: Uint8Array): Wav16Data {
   if (bytes.length < 44) throw new Error("wav file too short")
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)

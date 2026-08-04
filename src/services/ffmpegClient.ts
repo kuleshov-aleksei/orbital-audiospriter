@@ -1,6 +1,7 @@
 import type {
   Capabilities,
   LoudnessNormalizeResult,
+  Mp3EncodeResult,
   SelfTestResult,
   WorkerRequest,
   WorkerResponse,
@@ -54,6 +55,7 @@ type RequestPayload =
   | { kind: "capabilities" }
   | { kind: "selftest" }
   | { kind: "normalize"; wav: Uint8Array; targetLufs: number }
+  | { kind: "encodeMp3"; wav: Uint8Array; bitrate: number }
 
 function request(payload: RequestPayload): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
@@ -89,6 +91,14 @@ export async function normalizeAudio(
     throw new Error(response.error || "normalization failed")
   }
   return response.data as LoudnessNormalizeResult
+}
+
+export async function encodeMp3(wav: Uint8Array, bitrate = 192): Promise<Mp3EncodeResult> {
+  const response = await request({ kind: "encodeMp3", wav, bitrate })
+  if (!response.ok || !response.data) {
+    throw new Error(response.error || "MP3 encode failed")
+  }
+  return response.data as Mp3EncodeResult
 }
 
 export function getLogs(): string[] {

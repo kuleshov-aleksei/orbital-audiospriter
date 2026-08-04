@@ -1,3 +1,10 @@
+/** Replace the extension of a file name (returns `name` unchanged if none). */
+export function replaceExtension(name: string, ext: string): string {
+  const dot = name.lastIndexOf(".")
+  const base = dot > 0 ? name.slice(0, dot) : name
+  return `${base}.${ext}`
+}
+
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "—"
   if (bytes < 1024) return `${bytes} B`

@@ -1,10 +1,11 @@
 <template>
   <div class="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-8">
     <div>
-      <h2 class="text-xl font-semibold text-zinc-100">Phase 4 — Editor + loudness</h2>
+      <h2 class="text-xl font-semibold text-zinc-100">Phase 5 — Editor + loudness + save</h2>
       <p class="mt-1 max-w-3xl text-sm text-zinc-400">
-        Cut samples into pieces at the playhead, select a piece and delete it, then normalize
-        loudness to a target LUFS value (default −23, EBU R128).
+        Cut samples into pieces at the playhead, select a piece and delete it, normalize loudness to
+        a target LUFS value (default −23, EBU R128), then encode the kept pieces to mono MP3 and
+        write it back to the source folder.
       </p>
     </div>
 
@@ -173,7 +174,29 @@
               Undo edit
             </button>
             <button type="button" class="btn-secondary" @click="resetChunks()">Reset pieces</button>
+            <span class="h-4 w-px bg-zinc-700"></span>
+            <button
+              type="button"
+              class="btn"
+              title="Encode kept pieces as mono MP3 and write it back to the source folder"
+              :disabled="saving || !selected.pcm"
+              @click="saveSelected()">
+              {{ saving ? "Encoding…" : "💾 Save MP3" }}
+            </button>
+            <button
+              type="button"
+              class="btn-secondary"
+              title="Encode every imported sample to MP3 and write them all back"
+              :disabled="saving || store.samples.length === 0"
+              @click="saveAll()">
+              {{
+                saving ? `Encoding ${saveDone}/${saveTotal}…` : `Save all (${store.samples.length})`
+              }}
+            </button>
           </div>
+
+          <p v-if="saveSuccess" class="mt-2 text-xs text-emerald-400">{{ saveSuccess }}</p>
+          <p v-if="saveError" class="mt-2 text-sm text-red-400">{{ saveError }}</p>
 
           <p v-if="selected" class="mt-2 text-xs text-zinc-600">
             Space/K play · J/L ±2s · Delete removes the selected piece · drag the waveform to select
@@ -265,13 +288,14 @@ import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.js"
 import type { Region } from "wavesurfer.js/dist/plugins/regions.js"
 import { useProjectStore } from "@/stores/project"
 import { decodeAudioFile } from "@/services/audioDecode"
-import { normalizeAudio } from "@/services/ffmpegClient"
-import { listAudioFiles, readFileBytes } from "@/services/fsAccess"
+import { encodeMp3, normalizeAudio } from "@/services/ffmpegClient"
+import { listAudioFiles, readFileBytes, writeFileToDir } from "@/services/fsAccess"
 import type { Sample, SampleChunk } from "@/types/audio"
 import { DEFAULT_TARGET_LUFS } from "@/types/audio"
 import { chunksTotalDuration, spliceChunks } from "@/utils/chunks"
 import { measureLoudness } from "@/utils/loudness"
 import { pcmToWav16 } from "@/utils/wav"
+import { formatBytes, replaceExtension } from "@/utils/format"
 
 defineOptions({ name: "EditorView" })
 
@@ -284,6 +308,13 @@ const normalizeDone = ref(0)
 const normalizeTotal = ref(0)
 const normalizeError = ref<string | null>(null)
 const measuredLufs = ref<number | null>(null)
+
+const MP3_BITRATE = 192
+const saving = ref(false)
+const saveDone = ref(0)
+const saveTotal = ref(0)
+const saveError = ref<string | null>(null)
+const saveSuccess = ref<string | null>(null)
 
 const importing = ref(false)
 const importDone = ref(0)
@@ -756,6 +787,63 @@ async function normalizeAll(): Promise<void> {
     }
   } finally {
     normalizing.value = false
+  }
+}
+
+async function saveSampleToSourceDir(sample: Sample): Promise<void> {
+  await store.ensurePermission("source")
+  const dir = store.sourceDirHandle
+  if (!dir || store.sourceDirStatus !== "granted") {
+    throw new Error("source folder is not writable; re-grant access on the Home tab")
+  }
+  const spliced = spliceChunks(sample.pcm!, sample.chunks, sample.sampleRate)
+  const wav = pcmToWav16(spliced, sample.sampleRate)
+  const result = await encodeMp3(wav, MP3_BITRATE)
+  const name = replaceExtension(sample.fileName, "mp3")
+  await writeFileToDir(dir, name, result.bytes)
+  saveSuccess.value = `Wrote ${name} (${formatBytes(result.bytes.length)}) to the source folder`
+}
+
+async function saveSelected(): Promise<void> {
+  const sample = selected.value
+  if (!sample?.pcm) return
+  if (saving.value) return
+  saving.value = true
+  saveError.value = null
+  saveSuccess.value = null
+  try {
+    await saveSampleToSourceDir(sample)
+  } catch (error) {
+    saveError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveAll(): Promise<void> {
+  if (saving.value) return
+  saving.value = true
+  saveError.value = null
+  saveSuccess.value = null
+  const toSave = store.samples.filter((s) => s.pcm)
+  saveTotal.value = toSave.length
+  saveDone.value = 0
+  try {
+    for (const sample of toSave) {
+      try {
+        await saveSampleToSourceDir(sample)
+      } catch (error) {
+        saveError.value = `"${sample.fileName}": ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      }
+      saveDone.value++
+    }
+    if (store.sourceGranted && toSave.length > 0 && !saveError.value) {
+      saveSuccess.value = `Saved ${toSave.length} sample${toSave.length === 1 ? "" : "s"} to the source folder`
+    }
+  } finally {
+    saving.value = false
   }
 }
 

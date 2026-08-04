@@ -34,15 +34,23 @@ export interface LoudnessNormalizeResult {
   method: "loudnorm" | "r128"
 }
 
+export interface Mp3EncodeResult {
+  /** Encoded mono MP3 bytes, ready to write to disk. */
+  bytes: Uint8Array<ArrayBuffer>
+  /** Duration of the encoded audio in seconds. */
+  durationSec: number
+}
+
 export type WorkerRequest =
   | { id: number; kind: "capabilities" }
   | { id: number; kind: "selftest" }
   | { id: number; kind: "normalize"; wav: Uint8Array; targetLufs: number }
+  | { id: number; kind: "encodeMp3"; wav: Uint8Array; bitrate: number }
 
 export interface WorkerResponse {
   id: number
   ok: boolean
-  data?: Capabilities | SelfTestResult | LoudnessNormalizeResult
+  data?: Capabilities | SelfTestResult | LoudnessNormalizeResult | Mp3EncodeResult
   error?: string
   logs: string[]
 }

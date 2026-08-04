@@ -189,17 +189,17 @@ const phases = [
   {
     title: "Phase 3 — Import + editor",
     description: "decodeAudioData → PCM, wavesurfer.js waveform, trim regions, undo.",
-    done: false,
+    done: true,
   },
   {
     title: "Phase 4 — Loudness",
     description: "JS EBU R128 to -23 LUFS with before/after preview.",
-    done: false,
+    done: true,
   },
   {
     title: "Phase 5 — Per-sample save",
     description: "Encode mono MP3 and write back to the source dir.",
-    done: false,
+    done: true,
   },
   {
     title: "Phase 6 — Event assignment",
