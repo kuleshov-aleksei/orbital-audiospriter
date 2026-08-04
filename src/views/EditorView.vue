@@ -276,6 +276,60 @@
           </div>
           <p v-if="normalizeError" class="mt-2 text-sm text-red-400">{{ normalizeError }}</p>
         </div>
+
+        <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-zinc-200">Event assignment</h3>
+            <span class="text-[11px] text-zinc-500"
+              >{{ coveredCount }}/{{ ORBITAL_EVENTS.length }}</span
+            >
+          </div>
+          <p v-if="!selected" class="mt-2 text-xs text-zinc-500">
+            Select a sample to assign orbital events.
+          </p>
+          <template v-else>
+            <p class="mt-2 text-xs text-zinc-500">
+              Click an event to assign it to
+              <span class="text-zinc-300">{{ selected.fileName }}</span
+              >. A sample may hold several events (aliases share the same timing).
+            </p>
+            <div class="mt-3 flex flex-wrap gap-1">
+              <button
+                v-for="event in ORBITAL_EVENTS"
+                :key="event"
+                type="button"
+                class="rounded border px-2 py-1 text-[11px] transition"
+                :class="eventClasses(event)"
+                :title="eventTooltip(event)"
+                @click="toggleEvent(event)">
+                <span
+                  class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
+                  :class="coveredEvents.has(event) ? 'bg-emerald-400' : 'bg-amber-400'"></span>
+                {{ event }}
+              </button>
+            </div>
+            <p v-if="missingEvents.length > 0" class="mt-3 text-[11px] text-zinc-500">
+              <span class="text-amber-400">Not covered:</span>
+              {{ missingEvents.join(", ") }} — assign one to this sample to add it.
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="btn-secondary"
+                title="Persist the mapping to __audiosprter.events.json in the source folder"
+                :disabled="mappingSaving"
+                @click="saveMapping()">
+                {{ mappingSaving ? "Saving…" : "💾 Save mapping" }}
+              </button>
+              <span
+                v-if="mappingStatus"
+                class="text-[11px]"
+                :class="mappingError ? 'text-red-400' : 'text-emerald-400'">
+                {{ mappingStatus }}
+              </span>
+            </div>
+          </template>
+        </div>
       </div>
     </section>
   </div>
@@ -290,8 +344,15 @@ import { useProjectStore } from "@/stores/project"
 import { decodeAudioFile } from "@/services/audioDecode"
 import { encodeMp3, normalizeAudio } from "@/services/ffmpegClient"
 import { listAudioFiles, readFileBytes, writeFileToDir } from "@/services/fsAccess"
+import {
+  applyEventMapping,
+  buildEventMapping,
+  EVENT_MAPPING_FILE,
+  loadEventMapping,
+  saveEventMapping,
+} from "@/services/eventMapping"
 import type { Sample, SampleChunk } from "@/types/audio"
-import { DEFAULT_TARGET_LUFS } from "@/types/audio"
+import { DEFAULT_TARGET_LUFS, ORBITAL_EVENTS } from "@/types/audio"
 import { chunksTotalDuration, spliceChunks } from "@/utils/chunks"
 import { measureLoudness } from "@/utils/loudness"
 import { pcmToWav16 } from "@/utils/wav"
@@ -315,6 +376,10 @@ const saveDone = ref(0)
 const saveTotal = ref(0)
 const saveError = ref<string | null>(null)
 const saveSuccess = ref<string | null>(null)
+
+const mappingSaving = ref(false)
+const mappingStatus = ref<string | null>(null)
+const mappingError = ref(false)
 
 const importing = ref(false)
 const importDone = ref(0)
@@ -847,9 +912,83 @@ async function saveAll(): Promise<void> {
   }
 }
 
+const coveredEvents = computed(() => {
+  const covered = new Set<string>()
+  for (const sample of store.samples) {
+    for (const event of sample.assignedEvents) covered.add(event)
+  }
+  return covered
+})
+
+const coveredCount = computed(() => coveredEvents.value.size)
+
+const missingEvents = computed(() =>
+  ORBITAL_EVENTS.filter((event) => !coveredEvents.value.has(event)),
+)
+
+function eventTooltip(event: string): string {
+  const onSelected = selected.value?.assignedEvents.includes(
+    event as Sample["assignedEvents"][number],
+  )
+  if (onSelected) return `${event} is assigned to this sample — click to unassign`
+  return coveredEvents.value.has(event)
+    ? `${event} is bound to another sample — click to reassign it here`
+    : `${event} has no sample yet — click to assign`
+}
+
+function eventClasses(event: string): string {
+  const onSelected = selected.value?.assignedEvents.includes(
+    event as Sample["assignedEvents"][number],
+  )
+  if (onSelected) return "border-violet-600/60 bg-violet-600/20 text-violet-200"
+  if (coveredEvents.value.has(event))
+    return "border-zinc-700 bg-zinc-800/40 text-zinc-400 hover:border-zinc-600"
+  return "border-amber-500/40 bg-amber-500/5 text-amber-200/80 hover:bg-amber-500/10"
+}
+
+function toggleEvent(event: string): void {
+  const sample = selected.value
+  if (!sample) return
+  store.toggleAssignedEvent(sample.id, event as Sample["assignedEvents"][number])
+  mappingStatus.value = null
+}
+
+async function saveMapping(): Promise<void> {
+  const sample = selected.value
+  const dir = store.sourceDirHandle
+  if (!sample || !dir) return
+  mappingSaving.value = true
+  mappingStatus.value = null
+  mappingError.value = false
+  try {
+    await store.ensurePermission("source")
+    if (store.sourceDirStatus !== "granted") {
+      throw new Error("source folder is not writable; re-grant access on the Home tab")
+    }
+    const mapping = buildEventMapping(store.samples)
+    await saveEventMapping(dir, mapping)
+    mappingStatus.value = `Saved ${EVENT_MAPPING_FILE} (${Object.keys(mapping.samples).length} samples)`
+  } catch (error) {
+    mappingError.value = true
+    mappingStatus.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    mappingSaving.value = false
+  }
+}
+
+async function restoreMapping(): Promise<void> {
+  const dir = store.sourceDirHandle
+  if (!dir) return
+  const mapping = await loadEventMapping(dir)
+  if (mapping) applyEventMapping(store.samples, mapping)
+}
+
 onMounted(() => {
   window.addEventListener("keydown", handleKeydown)
-  void importAllSamples()
+  void (async () => {
+    await importAllSamples()
+    await restoreMapping()
+  })()
 })
 
 onBeforeUnmount(() => {

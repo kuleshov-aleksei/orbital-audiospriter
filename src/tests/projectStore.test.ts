@@ -198,3 +198,53 @@ describe("project store loudness actions", () => {
     expect(store.undoNormalize("a")).toBe(false)
   })
 })
+
+describe("project store event assignment", () => {
+  it("assigns an event to a sample", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample({ id: "a" }))
+
+    expect(store.toggleAssignedEvent("a", "mute")).toBe(true)
+    expect(store.samples[0].assignedEvents).toEqual(["mute"])
+  })
+
+  it("unassigns an event when toggled off", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample({ id: "a", assignedEvents: ["mute", "unmute"] }))
+
+    expect(store.toggleAssignedEvent("a", "mute")).toBe(false)
+    expect(store.samples[0].assignedEvents).toEqual(["unmute"])
+  })
+
+  it("keeps one sfx per event: assigning steals it from the previous owner", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample({ id: "a", assignedEvents: ["mute"] }))
+    store.addSample(makeSample({ id: "b", assignedEvents: [] }))
+
+    expect(store.toggleAssignedEvent("b", "mute")).toBe(true)
+    expect(store.samples.find((s) => s.id === "a")!.assignedEvents).toEqual([])
+    expect(store.samples.find((s) => s.id === "b")!.assignedEvents).toEqual(["mute"])
+  })
+
+  it("does not steal when the target already owns the event", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample({ id: "a", assignedEvents: ["mute"] }))
+    store.addSample(makeSample({ id: "b", assignedEvents: ["mute"] }))
+
+    expect(store.toggleAssignedEvent("a", "mute")).toBe(false)
+    expect(store.samples.find((s) => s.id === "a")!.assignedEvents).toEqual([])
+    expect(store.samples.find((s) => s.id === "b")!.assignedEvents).toEqual([])
+  })
+
+  it("is a no-op for an unknown sample id", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample({ id: "a" }))
+
+    expect(store.toggleAssignedEvent("missing", "mute")).toBe(false)
+  })
+})

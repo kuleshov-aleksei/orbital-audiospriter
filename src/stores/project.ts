@@ -1,6 +1,6 @@
 import { defineStore } from "pinia"
 import { computed, ref } from "vue"
-import type { LoudnessResult, ProjectState, Sample, SampleChunk } from "@/types/audio"
+import type { LoudnessResult, OrbitalEvent, ProjectState, Sample, SampleChunk } from "@/types/audio"
 import { DEFAULT_TARGET_LUFS } from "@/types/audio"
 import { clampChunkRange, removeChunkById, splitChunkAt } from "@/utils/chunks"
 import {
@@ -91,6 +91,31 @@ export const useProjectStore = defineStore("project", () => {
 
   function removeSample(id: string): void {
     samples.value = samples.value.filter((s) => s.id !== id)
+  }
+
+  /** Replace a sample's assigned events wholesale. */
+  function setAssignedEvents(id: string, events: OrbitalEvent[]): void {
+    const sample = samples.value.find((s) => s.id === id)
+    if (sample) sample.assignedEvents = events
+  }
+
+  /**
+   * Toggle an event on a sample, keeping the "one sfx per event" invariant:
+   * assigning an event steals it from any other sample that currently owns it.
+   * Returns whether the event is now assigned to the sample.
+   */
+  function toggleAssignedEvent(id: string, event: OrbitalEvent): boolean {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample) return false
+    const wasAssigned = sample.assignedEvents.includes(event)
+    for (const other of samples.value) {
+      if (other.assignedEvents.includes(event)) {
+        other.assignedEvents = other.assignedEvents.filter((e) => e !== event)
+      }
+    }
+    if (wasAssigned) return false
+    sample.assignedEvents = [...sample.assignedEvents, event]
+    return true
   }
 
   function setChunks(id: string, chunks: SampleChunk[]): void {
@@ -214,6 +239,8 @@ export const useProjectStore = defineStore("project", () => {
     detachDir,
     addSample,
     removeSample,
+    setAssignedEvents,
+    toggleAssignedEvent,
     setChunks,
     cutSample,
     deleteChunk,

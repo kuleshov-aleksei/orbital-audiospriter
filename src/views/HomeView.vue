@@ -204,7 +204,7 @@ const phases = [
   {
     title: "Phase 6 — Event assignment",
     description: "Multi-assign orbital events, alias suggestions.",
-    done: false,
+    done: true,
   },
   {
     title: "Phase 7 — Sprite export",
