@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package.json ./
 COPY pnpm-lock.yaml ./
 COPY pnpm-workspace.yaml ./
-RUN npm install -g pnpm@10.0.0 && pnpm install --frozen-lockfile
+RUN npm install -g pnpm@9.0.0 && pnpm install --frozen-lockfile
 
 # Copies source + runs prebuild (copies ffmpeg core into public/ffmpeg) + vite build (+ PWA SW)
 COPY . .

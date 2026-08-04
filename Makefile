@@ -1,4 +1,4 @@
-.PHONY: help install dev build preview typecheck lint lint-check prettier test test-run prepare-ffmpeg clean
+.PHONY: help install dev build preview typecheck lint lint-check prettier test test-run prepare-ffmpeg docker-build docker-up docker-down clean
 
 # Default target
 help:
@@ -14,6 +14,9 @@ help:
 	@echo "  test          - Run vitest in watch mode"
 	@echo "  test-run      - Run vitest once"
 	@echo "  prepare-ffmpeg - Copy @ffmpeg/core-st into public/ffmpeg"
+	@echo "  docker-build  - Build Docker image"
+	@echo "  docker-up     - Start with Docker Compose"
+	@echo "  docker-down   - Stop Docker Compose"
 	@echo "  clean         - Remove build artifacts"
 
 # Install dependencies
@@ -33,10 +36,13 @@ dev:
 	@echo "Open the Spike tab and run both checks for the capability matrix."
 	pnpm dev
 
+# Get version from git tag + commit
+VERSION := $(shell ./scripts/version.sh 2>/dev/null || echo "dev-unknown")
+
 # Build the production bundle
 build:
-	@echo "Building production bundle..."
-	pnpm build
+	@echo "Building version: $(VERSION)"
+	VITE_APP_VERSION=$(VERSION) pnpm build
 
 # Preview the production build
 preview:
@@ -79,3 +85,16 @@ clean:
 	rm -rf dist
 	rm -rf dev-dist
 	rm -rf node_modules
+
+# Docker commands
+docker-build:
+	@echo "Building Docker image with version: $(VERSION)..."
+	docker build --build-arg VERSION=$(VERSION) -t orbital-audiospriter -f Dockerfile .
+
+docker-up:
+	@echo "Starting with Docker Compose (version: $(VERSION))..."
+	VERSION=$(VERSION) docker compose up -d
+
+docker-down:
+	@echo "Stopping Docker Compose..."
+	VERSION=$(VERSION) docker compose down

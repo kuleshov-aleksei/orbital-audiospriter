@@ -1,0 +1,54 @@
+name: Deploy to Production
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, orbital-host]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: get_version
+        run: |
+          VERSION=$(./scripts/version.sh)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Deploying version: $VERSION"
+
+      - name: Build Docker image
+        run: |
+          # Build image with version tag using buildx (BuildKit)
+          docker buildx build --build-arg VERSION=${{ env.VERSION }} -t orbital-audiospriter:${{ env.VERSION }} -f Dockerfile .
+
+      - name: Copy docker-compose file
+        run: |
+          # Copy compose file and substitute version
+          sed "s/\${VERSION}/${{ env.VERSION }}/g" docker-compose.yml > /opt/orbital-audiospriter/docker-compose.yml
+
+      - name: Deploy
+        run: |
+          cd /opt/orbital-audiospriter
+
+          # Deploy with docker compose
+          docker compose up -d --remove-orphans
+
+      - name: Cleanup old Docker images
+        run: |
+          # Remove old images except current version
+          docker images --format "table {{.Repository}}:{{.Tag}}" | grep "orbital-audiospriter" | grep -v "${{ env.VERSION }}" | xargs -r docker rmi || true
+
+          # Remove dangling images
+          docker image prune -f
+
+          echo "Deployment completed successfully!"
+          echo "Version: ${{ env.VERSION }}"
+
+      - name: Clean up builder
+        run: docker builder prune -f
