@@ -3,9 +3,8 @@
     <div>
       <h2 class="text-xl font-semibold text-zinc-100">Editor</h2>
       <p class="mt-1 max-w-3xl text-sm text-zinc-400">
-        Cut samples into pieces at the playhead, select a piece and delete it, normalize loudness to
-        a target LUFS value (default −23, EBU R128), then encode the kept pieces to mono MP3 and
-        write it back to the source folder.
+        Basic audio editor: cut samples into pieces at the playhead normalize loudness to
+        a target LUFS value (default -23, EBU R128), encode to mono MP3
       </p>
     </div>
 

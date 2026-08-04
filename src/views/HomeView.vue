@@ -3,8 +3,7 @@
     <div>
       <h2 class="text-xl font-semibold text-zinc-100">Orbital AudioSpriter</h2>
       <p class="mt-1 max-w-3xl text-sm text-zinc-400">
-        Chrome-only PWA for preparing orbital sound packs: open a folder, trim + normalize samples
-        to -23 LUFS, assign events, and export an audiosprite (.mp3/.ogg/.m4a + .json + .ts).
+        Chrome-only PWA for preparing orbital sound packs: open a folder, trim + normalize samples, assign events, and export an audiosprite (.mp3/.ogg/.m4a + .json + .ts).
       </p>
     </div>
 
