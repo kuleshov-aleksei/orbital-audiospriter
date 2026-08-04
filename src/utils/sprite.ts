@@ -1,4 +1,5 @@
 import type { Sample, SpriteEntry, SpritePack } from "@/types/audio"
+import { ORBITAL_EVENTS, type OrbitalEvent } from "@/types/audio"
 import { spliceChunks } from "@/utils/chunks"
 
 export interface BuiltSprite {
@@ -7,6 +8,18 @@ export interface BuiltSprite {
   /** Concatenated mono PCM at the samples' sample rate. */
   pcm: Float32Array
   sampleRate: number
+}
+
+/**
+ * Events from the canonical list that are not assigned to any sample.
+ * Returns an empty array when every known event has at least one sample.
+ */
+export function findUnassignedEvents(samples: Sample[]): OrbitalEvent[] {
+  const assigned = new Set<OrbitalEvent>()
+  for (const sample of samples) {
+    for (const event of sample.assignedEvents) assigned.add(event)
+  }
+  return ORBITAL_EVENTS.filter((event) => !assigned.has(event))
 }
 
 function camelize(packId: string): string {

@@ -4,6 +4,7 @@ import {
   buildSoundSpriteTs,
   buildSprite,
   camelCasePackId,
+  findUnassignedEvents,
 } from "@/utils/sprite"
 import { DEFAULT_TARGET_LUFS } from "@/types/audio"
 import type { Sample } from "@/types/audio"
@@ -107,6 +108,54 @@ describe("buildSprite", () => {
     const { pack, pcm } = buildSprite([makeSample("a", "a.wav", [])], "my_pack", 0)
     expect(pack.entries).toEqual([])
     expect(pcm.length).toBe(0)
+  })
+})
+
+describe("findUnassignedEvents", () => {
+  it("returns an empty list when every event is assigned", () => {
+    const all = makeSample("a", "a.wav", [
+      "join_room",
+      "leave_room",
+      "mute",
+      "unmute",
+      "deafen",
+      "undeafen",
+      "camera_start",
+      "camera_stop",
+      "screenshare_start",
+      "screenshare_stop",
+      "message",
+      "viewer_joined",
+      "viewer_left",
+    ])
+    expect(findUnassignedEvents([all])).toEqual([])
+  })
+
+  it("lists events that are not assigned to any sample", () => {
+    const sample = makeSample("a", "a.wav", ["mute", "message"])
+    expect(findUnassignedEvents([sample])).toEqual([
+      "join_room",
+      "leave_room",
+      "unmute",
+      "deafen",
+      "undeafen",
+      "camera_start",
+      "camera_stop",
+      "screenshare_start",
+      "screenshare_stop",
+      "viewer_joined",
+      "viewer_left",
+    ])
+  })
+
+  it("treats events spread across multiple samples as assigned", () => {
+    const a = makeSample("a", "a.wav", ["mute"])
+    const b = makeSample("b", "b.wav", ["unmute", "deafen"])
+    const missing = findUnassignedEvents([a, b])
+    expect(missing).toContain("join_room")
+    expect(missing).not.toContain("mute")
+    expect(missing).not.toContain("unmute")
+    expect(missing).not.toContain("deafen")
   })
 })
 

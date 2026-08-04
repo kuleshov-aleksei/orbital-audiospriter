@@ -200,6 +200,10 @@
         <p v-else-if="!store.outputGranted" class="text-xs text-zinc-500">
           Choose an output folder (the orbital repo) on the Home tab first.
         </p>
+        <p v-else-if="unassignedEvents.length > 0" class="text-xs text-amber-400">
+          Not all events are assigned: {{ unassignedEvents.join(", ") }}. Assign them in the Editor
+          before exporting.
+        </p>
         <p v-else-if="assignedCount === 0" class="text-xs text-zinc-500">
           No events assigned yet — assign events in the Editor first.
         </p>
@@ -221,7 +225,12 @@ import { buildEventMapping, saveEventMapping } from "@/services/eventMapping"
 import { encodeSprite } from "@/services/ffmpegClient"
 import type { AudioFileEntry } from "@/services/fsAccess"
 import { formatBytes } from "@/utils/format"
-import { buildAudiospriteJson, buildSoundSpriteTs, buildSprite } from "@/utils/sprite"
+import {
+  buildAudiospriteJson,
+  buildSoundSpriteTs,
+  buildSprite,
+  findUnassignedEvents,
+} from "@/utils/sprite"
 import { pcmToWav16 } from "@/utils/wav"
 
 defineOptions({ name: "HomeView" })
@@ -246,14 +255,19 @@ const assignedCount = computed(
   () => store.samples.filter((s) => s.assignedEvents.length > 0).length,
 )
 
+const unassignedEvents = computed(() => findUnassignedEvents(store.samples))
+
 const canExport = computed(
   () => store.outputGranted && assignedCount.value > 0 && packIdValid.value,
 )
 
 const exportDisabledReason = computed(() => {
   if (!store.outputGranted) return "Choose an output folder on the Home tab first"
-  if (assignedCount.value === 0) return "Assign events to at least one sample in the Editor first"
   if (!packIdValid.value) return "Enter a valid pack name first"
+  if (unassignedEvents.value.length > 0) {
+    return `Some events are unassigned: ${unassignedEvents.value.join(", ")}`
+  }
+  if (assignedCount.value === 0) return "Assign events to at least one sample in the Editor first"
   return ""
 })
 
@@ -264,6 +278,12 @@ async function exportSprite(): Promise<void> {
   exportStatus.value = null
   exportError.value = false
   try {
+    const missing = unassignedEvents.value
+    if (missing.length > 0) {
+      throw new Error(
+        `Cannot export: these events are not assigned to any sample: ${missing.join(", ")}`,
+      )
+    }
     await store.ensurePermission("output")
     if (store.outputDirStatus !== "granted") {
       throw new Error("output folder is not writable; re-grant access on the Home tab")
