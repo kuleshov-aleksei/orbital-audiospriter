@@ -132,6 +132,14 @@
             </button>
             <button
               type="button"
+              class="btn"
+              title="Promote the selected piece to its own independent sample"
+              :disabled="!selectedChunk"
+              @click="extractSelectedChunk()">
+              ✨ Make SFX
+            </button>
+            <button
+              type="button"
               class="btn-secondary"
               title="Zoom out"
               :disabled="!wavesurferReady"
@@ -684,6 +692,17 @@ function deleteSelectedChunk(): void {
     return
   }
   void loadSample(sample.id, false)
+}
+
+function extractSelectedChunk(): void {
+  const sample = selected.value
+  const chunk = selectedChunk.value
+  if (!sample || !chunk) return
+  const newId = store.extractChunkAsSample(sample.id, chunk.id)
+  if (newId) {
+    undoStack.value = []
+    void loadSample(newId)
+  }
 }
 
 function commitChunkRange(): void {

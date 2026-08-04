@@ -221,6 +221,65 @@ export const useProjectStore = defineStore("project", () => {
     return false
   }
 
+  /**
+   * Derive a unique source-style file name for an extracted piece of `name`,
+   * e.g. `click.wav` -> `click__part1.wav`. Never collides with an existing
+   * sample's file name (so it round-trips through the event mapping and save).
+   */
+  function derivedFileName(name: string): string {
+    const dot = name.lastIndexOf(".")
+    const base = dot > 0 ? name.slice(0, dot) : name
+    const ext = dot > 0 ? name.slice(dot) : ""
+    const taken = new Set(samples.value.map((s) => s.fileName))
+    let n = 1
+    while (true) {
+      const candidate = `${base}__part${n}${ext}`
+      if (!taken.has(candidate)) return candidate
+      n++
+    }
+  }
+
+  /**
+   * Promote a single chunk into its own independent sample: slice the source
+   * PCM for that chunk, register a new sample owning just that slice, and move
+   * the chunk out of the original. Returns the new sample's id, or null when
+   * the chunk/sample doesn't exist.
+   */
+  function extractChunkAsSample(id: string, chunkId: string): string | null {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample || !sample.pcm) return null
+    const chunk = sample.chunks.find((c) => c.id === chunkId)
+    if (!chunk) return null
+
+    const startSample = Math.round(chunk.start * sample.sampleRate)
+    const endSample = Math.round(chunk.end * sample.sampleRate)
+    const slice = sample.pcm.slice(startSample, endSample)
+    const duration = (endSample - startSample) / sample.sampleRate
+
+    const newId = crypto.randomUUID()
+    const extracted: Sample = {
+      id: newId,
+      fileName: derivedFileName(sample.fileName),
+      fileHandle: null,
+      pcm: slice,
+      sampleRate: sample.sampleRate,
+      duration,
+      chunks: [{ id: crypto.randomUUID(), start: 0, end: duration }],
+      loudness: undefined,
+      targetLufs: sample.targetLufs,
+      assignedEvents: [],
+    }
+
+    const remaining = sample.chunks.filter((c) => c.id !== chunkId)
+    if (remaining.length === 0) {
+      removeSample(id)
+    } else {
+      sample.chunks = remaining
+    }
+    samples.value.push(extracted)
+    return newId
+  }
+
   /** Adjust a chunk's absolute boundaries (clamped to neighbours). */
   function setChunkRange(id: string, chunkId: string, start: number, end: number): boolean {
     const sample = samples.value.find((s) => s.id === id)
@@ -318,6 +377,7 @@ export const useProjectStore = defineStore("project", () => {
     setChunks,
     cutSample,
     deleteChunk,
+    extractChunkAsSample,
     setChunkRange,
     setLoudness,
     scaleSamplePcm,

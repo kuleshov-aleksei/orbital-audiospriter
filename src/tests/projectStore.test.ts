@@ -127,6 +127,74 @@ describe("project store cut/delete chunks", () => {
   })
 })
 
+describe("project store extract chunk as sample", () => {
+  it("promotes a chunk into its own independent sample and keeps the rest", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(
+      makeSample({
+        chunks: [
+          { id: "c0", start: 0, end: 0.4 },
+          { id: "c1", start: 0.4, end: 1 },
+        ],
+      }),
+    )
+
+    const newId = store.extractChunkAsSample("a", "c1")
+
+    expect(newId).not.toBeNull()
+    // Original keeps only the remaining chunk.
+    expect(store.samples.find((s) => s.id === "a")!.chunks).toEqual([
+      expect.objectContaining({ id: "c0", start: 0, end: 0.4 }),
+    ])
+    // New sample owns the extracted slice as a 0-start chunk.
+    const extracted = store.samples.find((s) => s.id === newId)
+    expect(extracted).toBeDefined()
+    expect(extracted!.duration).toBeCloseTo(0.6, 5)
+    expect(extracted!.chunks[0].start).toBe(0)
+    expect(extracted!.chunks[0].end).toBeCloseTo(0.6, 5)
+    expect(extracted!.assignedEvents).toEqual([])
+  })
+
+  it("removes the original sample when the extracted chunk was the last one", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample({ id: "a" }))
+
+    const newId = store.extractChunkAsSample("a", "c0")
+
+    expect(newId).not.toBeNull()
+    expect(store.samples.find((s) => s.id === "a")).toBeUndefined()
+    expect(store.samples).toHaveLength(1)
+    expect(store.samples[0].id).toBe(newId)
+  })
+
+  it("is a no-op for unknown sample or chunk ids", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample({ id: "a" }))
+
+    expect(store.extractChunkAsSample("nope", "c0")).toBeNull()
+    expect(store.extractChunkAsSample("a", "nope")).toBeNull()
+    expect(store.samples).toHaveLength(1)
+  })
+
+  it("gives extracted samples a unique file name", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample({ id: "a" }))
+
+    const first = store.extractChunkAsSample("a", "c0")!
+    const other = store.samples.find((s) => s.id === first)!
+    other.fileName = "hit__part1.mp3"
+    store.addSample(makeSample({ id: "b", fileName: "hit.mp3" }))
+    const second = store.extractChunkAsSample("b", "c0")!
+
+    expect(store.samples.find((s) => s.id === first)!.fileName).toBe("hit__part1.mp3")
+    expect(store.samples.find((s) => s.id === second)!.fileName).toBe("hit__part2.mp3")
+  })
+})
+
 describe("project store loudness actions", () => {
   it("scales the sample pcm by a linear factor", () => {
     setActivePinia(createPinia())
