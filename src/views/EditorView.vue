@@ -22,9 +22,13 @@
             <button
               type="button"
               class="mt-2 w-full rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="importing"
+              :disabled="store.importing"
               @click="importAllSamples()">
-              {{ importing ? `Importing… ${importDone}/${importTotal}` : "Re-scan folder" }}
+              {{
+                store.importing
+                  ? `Importing… ${store.importDone}/${store.importTotal}`
+                  : "Re-scan folder"
+              }}
             </button>
             <p v-if="importError" class="mt-2 text-sm text-red-400">{{ importError }}</p>
           </template>
@@ -368,18 +372,11 @@ import WaveSurfer from "wavesurfer.js"
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.js"
 import type { Region } from "wavesurfer.js/dist/plugins/regions.js"
 import { useProjectStore } from "@/stores/project"
-import { decodeAudioFile } from "@/services/audioDecode"
 import { encodeMp3, normalizeAudio } from "@/services/ffmpegClient"
-import { listAudioFiles, readFileBytes, writeFileToDir } from "@/services/fsAccess"
-import {
-  applyEventMapping,
-  buildEventMapping,
-  EVENT_MAPPING_FILE,
-  loadEventMapping,
-  saveEventMapping,
-} from "@/services/eventMapping"
+import { writeFileToDir } from "@/services/fsAccess"
+import { buildEventMapping, EVENT_MAPPING_FILE, saveEventMapping } from "@/services/eventMapping"
 import type { Sample, SampleChunk } from "@/types/audio"
-import { DEFAULT_TARGET_LUFS, ORBITAL_EVENTS } from "@/types/audio"
+import { ORBITAL_EVENTS } from "@/types/audio"
 import { chunksTotalDuration, spliceChunks } from "@/utils/chunks"
 import { measureLoudness } from "@/utils/loudness"
 import { pcmToWav16 } from "@/utils/wav"
@@ -422,11 +419,7 @@ const EVENT_PAIRS: readonly (readonly string[])[] = [
 const testMode = ref(false)
 const playingEvent = ref<string | null>(null)
 
-const importing = ref(false)
-const importDone = ref(0)
-const importTotal = ref(0)
 const importError = ref<string | null>(null)
-const ignoredFiles = ref(new Set<string>())
 
 const selectedId = ref<string | null>(null)
 const selected = computed(() => store.samples.find((s) => s.id === selectedId.value) ?? null)
@@ -767,45 +760,16 @@ function handleKeydown(event: KeyboardEvent): void {
 
 async function importAllSamples(): Promise<void> {
   const dir = store.sourceDirHandle
-  if (!dir || store.sourceDirStatus !== "granted" || importing.value) return
-  importing.value = true
+  if (!dir || store.sourceDirStatus !== "granted" || store.importing) return
   importError.value = null
   try {
-    const files = await listAudioFiles(dir)
-    const existing = new Set(store.samples.map((s) => s.fileName))
-    const toImport = files.filter((f) => !existing.has(f.name) && !ignoredFiles.value.has(f.name))
-    importTotal.value = toImport.length
-    importDone.value = 0
-    for (const entry of toImport) {
-      try {
-        const bytes = await readFileBytes(entry.handle)
-        const decoded = await decodeAudioFile(bytes, entry.name)
-        const sample: Sample = {
-          id: crypto.randomUUID(),
-          fileName: entry.name,
-          fileHandle: entry.handle,
-          pcm: decoded.pcm,
-          sampleRate: decoded.sampleRate,
-          duration: decoded.duration,
-          chunks: [{ id: crypto.randomUUID(), start: 0, end: decoded.duration }],
-          loudness: undefined,
-          targetLufs: DEFAULT_TARGET_LUFS,
-          assignedEvents: [],
-        }
-        store.addSample(sample)
-      } catch {
-        ignoredFiles.value.add(entry.name)
-      }
-      importDone.value++
-    }
+    await store.importSamplesFromSource()
     if (!selected.value && store.samples.length > 0) {
       undoStack.value = []
       await loadSample(store.samples[0].id)
     }
   } catch (error) {
     importError.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    importing.value = false
   }
 }
 
@@ -816,7 +780,7 @@ function selectSample(id: string): void {
 
 function removeSampleUi(id: string): void {
   const sample = store.samples.find((s) => s.id === id)
-  if (sample) ignoredFiles.value.add(sample.fileName)
+  if (sample) store.ignoredFileNames.add(sample.fileName)
   store.removeSample(id)
   if (selectedId.value === id) {
     selectedId.value = null
@@ -1063,14 +1027,7 @@ async function saveMapping(): Promise<void> {
 }
 
 async function restoreMapping(): Promise<void> {
-  const dir = store.sourceDirHandle
-  if (!dir) return
-  const mapping = await loadEventMapping(dir)
-  if (mapping) {
-    if (mapping.packId) store.packId = mapping.packId
-    if (mapping.gap) store.gap = mapping.gap
-    applyEventMapping(store.samples, mapping)
-  }
+  await store.loadPackConfig()
 }
 
 onMounted(() => {

@@ -5,13 +5,17 @@ import { DEFAULT_GAP, DEFAULT_TARGET_LUFS } from "@/types/audio"
 import { clampChunkRange, removeChunkById, splitChunkAt } from "@/utils/chunks"
 import {
   clearDirectoryHandle,
+  listAudioFiles,
   openDirectoryPicker,
   persistDirectoryHandle,
   queryPermission,
+  readFileBytes,
   requestPermission,
   restoreDirectoryHandle,
 } from "@/services/fsAccess"
 import type { DirScope } from "@/services/fsAccess"
+import { decodeAudioFile } from "@/services/audioDecode"
+import { applyEventMapping, loadEventMapping } from "@/services/eventMapping"
 
 export type DirStatus = "not-chosen" | PermissionState
 
@@ -43,6 +47,70 @@ export const useProjectStore = defineStore("project", () => {
       outputDirHandle.value = output
       outputDirStatus.value = await queryPermission(output)
     }
+  }
+
+  /**
+   * Import every audio file in the source dir into the store (idempotent: skips
+   * files that already have a sample and files the user removed / that failed to
+   * decode). Shared by Home and Editor so the config is complete before any save.
+   */
+  const importing = ref(false)
+  const importTotal = ref(0)
+  const importDone = ref(0)
+  const ignoredFileNames = ref(new Set<string>())
+
+  async function importSamplesFromSource(): Promise<void> {
+    const dir = sourceDirHandle.value
+    if (!dir || sourceDirStatus.value !== "granted" || importing.value) return
+    importing.value = true
+    try {
+      const files = await listAudioFiles(dir)
+      const existing = new Set(samples.value.map((s) => s.fileName))
+      const toImport = files.filter(
+        (f) => !existing.has(f.name) && !ignoredFileNames.value.has(f.name),
+      )
+      importTotal.value = toImport.length
+      importDone.value = 0
+      for (const entry of toImport) {
+        try {
+          const bytes = await readFileBytes(entry.handle)
+          const decoded = await decodeAudioFile(bytes, entry.name)
+          const sample: Sample = {
+            id: crypto.randomUUID(),
+            fileName: entry.name,
+            fileHandle: entry.handle,
+            pcm: decoded.pcm,
+            sampleRate: decoded.sampleRate,
+            duration: decoded.duration,
+            chunks: [{ id: crypto.randomUUID(), start: 0, end: decoded.duration }],
+            loudness: undefined,
+            targetLufs: DEFAULT_TARGET_LUFS,
+            assignedEvents: [],
+          }
+          samples.value.push(sample)
+        } catch {
+          ignoredFileNames.value.add(entry.name)
+        }
+        importDone.value++
+      }
+    } finally {
+      importing.value = false
+    }
+  }
+
+  /**
+   * Load the persisted pack config (event assignments, pack name, gap) from the
+   * source dir mapping file and apply it. Call after the source dir is restored
+   * and samples are imported so assignments land on the real samples.
+   */
+  async function loadPackConfig(): Promise<void> {
+    const dir = sourceDirHandle.value
+    if (!dir) return
+    const mapping = await loadEventMapping(dir)
+    if (!mapping) return
+    if (mapping.packId) packId.value = mapping.packId
+    if (mapping.gap) gap.value = mapping.gap
+    applyEventMapping(samples.value, mapping)
   }
 
   async function openDir(scope: DirScope): Promise<void> {
@@ -232,7 +300,13 @@ export const useProjectStore = defineStore("project", () => {
     hasOutputDir,
     sourceGranted,
     outputGranted,
+    importing,
+    importTotal,
+    importDone,
+    ignoredFileNames,
     restoreFromIndexedDb,
+    importSamplesFromSource,
+    loadPackConfig,
     openSourceDir,
     openOutputDir,
     ensurePermission,

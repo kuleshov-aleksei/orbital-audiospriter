@@ -217,7 +217,7 @@ import { computed, onMounted, ref } from "vue"
 import { useProjectStore } from "@/stores/project"
 import type { DirStatus } from "@/stores/project"
 import { listAudioFiles, writeFileToDir } from "@/services/fsAccess"
-import { buildEventMapping, loadEventMapping, saveEventMapping } from "@/services/eventMapping"
+import { buildEventMapping, saveEventMapping } from "@/services/eventMapping"
 import { encodeSprite } from "@/services/ffmpegClient"
 import type { AudioFileEntry } from "@/services/fsAccess"
 import { formatBytes } from "@/utils/format"
@@ -390,14 +390,8 @@ async function savePack(): Promise<void> {
 onMounted(async () => {
   await store.restoreFromIndexedDb()
   await refreshFiles()
-  const dir = store.sourceDirHandle
-  if (dir) {
-    const mapping = await loadEventMapping(dir)
-    if (mapping) {
-      if (mapping.packId) store.packId = mapping.packId
-      if (mapping.gap) store.gap = mapping.gap
-    }
-  }
+  await store.importSamplesFromSource()
+  await store.loadPackConfig()
 })
 </script>
 
