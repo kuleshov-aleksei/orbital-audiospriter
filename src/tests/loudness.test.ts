@@ -38,8 +38,19 @@ describe("measureLoudness (EBU R128)", () => {
     expect(measureLoudness(pcm, 44100).truePeakDb).toBeCloseTo(0, 5)
   })
 
-  it("returns -Infinity when audio is shorter than one gating block", () => {
+  it("measures short non-silent audio as a single block (usable LUFS)", () => {
     const pcm = new Float32Array(8000).fill(0.1)
+    const measured = measureLoudness(pcm, 44100)
+    expect(Number.isFinite(measured.integratedLufs)).toBe(true)
+  })
+
+  it("returns -Infinity for empty (no) audio", () => {
+    const pcm = new Float32Array(0)
+    expect(measureLoudness(pcm, 44100).integratedLufs).toBe(-Infinity)
+  })
+
+  it("returns -Infinity when short audio is silent", () => {
+    const pcm = new Float32Array(8000).fill(0)
     expect(measureLoudness(pcm, 44100).integratedLufs).toBe(-Infinity)
   })
 })

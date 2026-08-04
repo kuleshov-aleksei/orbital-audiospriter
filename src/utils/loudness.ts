@@ -110,12 +110,26 @@ export function measureLoudness(pcm: Float32Array, sampleRate: number): Loudness
 
   const samplesIn100ms = Math.round(sampleRate / 10)
   const blockFrames = samplesIn100ms * 4
-  if (pcm.length < blockFrames) {
+  if (pcm.length === 0) {
     return { integratedLufs: -Infinity, truePeakDb }
   }
 
   const filtered = filterSignal(pcm, designKWeighting(sampleRate))
   const absoluteGateEnergy = Math.pow(10, (ABSOLUTE_GATE_LUFS + CALIBRATION_DB) / 10)
+
+  // Shorter than one 400 ms gating block (e.g. after trimming a sample to a
+  // short piece): there are no overlapping blocks, so treat the whole signal
+  // as a single block. Non-silent short audio still gets a usable LUFS value.
+  if (pcm.length < blockFrames) {
+    let energy = 0
+    for (let i = 0; i < filtered.length; i++) energy += filtered[i] * filtered[i]
+    energy = energy / filtered.length
+    if (energy < absoluteGateEnergy) {
+      return { integratedLufs: -Infinity, truePeakDb }
+    }
+    return { integratedLufs: 10 * Math.log10(energy) - CALIBRATION_DB, truePeakDb }
+  }
+
   const gatedEnergies: number[] = []
   for (let start = 0; start + blockFrames <= filtered.length; start += samplesIn100ms) {
     let sum = 0

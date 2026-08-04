@@ -2,7 +2,15 @@ import { defineStore } from "pinia"
 import { computed, ref } from "vue"
 import type { LoudnessResult, OrbitalEvent, ProjectState, Sample, SampleChunk } from "@/types/audio"
 import { DEFAULT_GAP, DEFAULT_TARGET_LUFS } from "@/types/audio"
-import { clampChunkRange, removeChunkById, splitChunkAt } from "@/utils/chunks"
+import {
+  chunksTotalDuration,
+  clampChunkRange,
+  clipChunks,
+  removeChunkById,
+  removeRange,
+  spliceChunks,
+  splitChunkAt,
+} from "@/utils/chunks"
 import {
   clearDirectoryHandle,
   listAudioFiles,
@@ -280,6 +288,92 @@ export const useProjectStore = defineStore("project", () => {
     return newId
   }
 
+  /** Build the constant that represents a sample good for a fresh extracted sample. */
+  interface ExtractedSample {
+    sample: Sample
+    remaining: SampleChunk[]
+  }
+
+  /**
+   * Slice `[start, end]` (spliced seconds) out of a sample into a new sample.
+   * Returns the new sample plus what's left of the original's chunks.
+   */
+  function sliceSpliced(id: string, start: number, end: number): ExtractedSample | null {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample || !sample.pcm) return null
+    const kept = clipChunks(sample.chunks, start, end)
+    if (kept.length === 0) return null
+    const spliced = spliceChunks(sample.pcm, kept, sample.sampleRate)
+    const duration = chunksTotalDuration(kept)
+    const newId = crypto.randomUUID()
+    const extracted: Sample = {
+      id: newId,
+      fileName: derivedFileName(sample.fileName),
+      fileHandle: null,
+      pcm: spliced,
+      sampleRate: sample.sampleRate,
+      duration,
+      chunks: [{ id: crypto.randomUUID(), start: 0, end: duration }],
+      loudness: undefined,
+      targetLufs: sample.targetLufs,
+      assignedEvents: [],
+    }
+    return {
+      sample: extracted,
+      remaining: removeRange(sample.chunks, start, end),
+    }
+  }
+
+  /**
+   * Move a spliced time range out of the sample into its own independent
+   * sample (ripple-removing it from the original). Returns the new id, or null
+   * when nothing overlaps the range.
+   */
+  function extractRangeAsSample(id: string, start: number, end: number): string | null {
+    const slice = sliceSpliced(id, start, end)
+    if (!slice) return null
+    const { sample: extracted, remaining } = slice
+    if (remaining.length === 0) removeSample(id)
+    else {
+      const sample = samples.value.find((s) => s.id === id)
+      if (sample) sample.chunks = remaining
+    }
+    samples.value.push(extracted)
+    return extracted.id
+  }
+
+  /**
+   * Delete a spliced time range (ripple): keep everything before and after it.
+   * Returns true when the sample was removed entirely.
+   */
+  function deleteRange(id: string, start: number, end: number): boolean {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample) return false
+    const remaining = removeRange(sample.chunks, start, end)
+    if (remaining.length === 0) {
+      removeSample(id)
+      return true
+    }
+    sample.chunks = remaining
+    return false
+  }
+
+  /**
+   * Trim to a spliced time range: remove everything outside it. Returns true
+   * when the sample was removed entirely.
+   */
+  function trimToRange(id: string, start: number, end: number): boolean {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample) return false
+    const kept = clipChunks(sample.chunks, start, end)
+    if (kept.length === 0) {
+      removeSample(id)
+      return true
+    }
+    sample.chunks = kept
+    return false
+  }
+
   /** Adjust a chunk's absolute boundaries (clamped to neighbours). */
   function setChunkRange(id: string, chunkId: string, start: number, end: number): boolean {
     const sample = samples.value.find((s) => s.id === id)
@@ -378,6 +472,9 @@ export const useProjectStore = defineStore("project", () => {
     cutSample,
     deleteChunk,
     extractChunkAsSample,
+    extractRangeAsSample,
+    deleteRange,
+    trimToRange,
     setChunkRange,
     setLoudness,
     scaleSamplePcm,

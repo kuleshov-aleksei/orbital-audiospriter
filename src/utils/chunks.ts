@@ -99,3 +99,38 @@ export function clampChunkRange(
   if (clampedStart === chunk.start && clampedEnd === chunk.end) return null
   return { start: clampedStart, end: clampedEnd }
 }
+
+/**
+ * Keep only the portion of the chunks that overlaps the spliced time range
+ * `[from, to)`, remapping clipped edges back to absolute source seconds.
+ * Returns the surviving chunks (empty when nothing overlaps).
+ */
+export function clipChunks(chunks: SampleChunk[], from: number, to: number): SampleChunk[] {
+  const result: SampleChunk[] = []
+  let spliced = 0
+  for (const chunk of chunks) {
+    const chunkStart = spliced
+    const chunkEnd = spliced + (chunk.end - chunk.start)
+    const overlapStart = Math.max(from, chunkStart)
+    const overlapEnd = Math.min(to, chunkEnd)
+    if (overlapEnd > overlapStart) {
+      result.push({
+        id: crypto.randomUUID(),
+        start: chunk.start + (overlapStart - chunkStart),
+        end: chunk.start + (overlapEnd - chunkStart),
+      })
+    }
+    spliced = chunkEnd
+  }
+  return result
+}
+
+/**
+ * Ripple-remove the spliced time range `[from, to)`: keep everything before it
+ * and everything after it, remapping edges back to absolute source seconds.
+ * Returns the surviving chunks (empty when nothing remains).
+ */
+export function removeRange(chunks: SampleChunk[], from: number, to: number): SampleChunk[] {
+  if (to <= from) return chunks
+  return [...clipChunks(chunks, 0, from), ...clipChunks(chunks, to, Number.POSITIVE_INFINITY)]
+}

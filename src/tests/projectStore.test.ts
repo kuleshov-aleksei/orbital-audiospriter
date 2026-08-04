@@ -195,6 +195,123 @@ describe("project store extract chunk as sample", () => {
   })
 })
 
+describe("project store range operations (selection)", () => {
+  it("extracts a spliced range into a new sample and removes it from the original", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(
+      makeSample({
+        chunks: [
+          { id: "c0", start: 0, end: 0.4 },
+          { id: "c1", start: 0.4, end: 1 },
+        ],
+      }),
+    )
+
+    // Spliced range 0.6–0.8 lies entirely inside the second chunk (0.4–1.0).
+    const newId = store.extractRangeAsSample("a", 0.6, 0.8)
+
+    expect(newId).not.toBeNull()
+    const extracted = store.samples.find((s) => s.id === newId)
+    expect(extracted).toBeDefined()
+    expect(extracted!.duration).toBeCloseTo(0.2, 5)
+    expect(extracted!.chunks[0].start).toBe(0)
+    expect(extracted!.chunks[0].end).toBeCloseTo(0.2, 5)
+    // Original loses the 0.6–0.8 slice: second chunk is split in two.
+    const original = store.samples.find((s) => s.id === "a")
+    expect(original!.chunks).toHaveLength(3)
+    expect(original!.chunks[0]).toEqual(expect.objectContaining({ start: 0, end: 0.4 }))
+    expect(original!.chunks[1]).toEqual(expect.objectContaining({ start: 0.4, end: 0.6 }))
+    expect(original!.chunks[2]).toEqual(expect.objectContaining({ start: 0.8, end: 1 }))
+  })
+
+  it("extracting the full spliced range removes the original sample", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample())
+
+    const newId = store.extractRangeAsSample("a", 0, 1)
+
+    expect(newId).not.toBeNull()
+    expect(store.samples.find((s) => s.id === "a")).toBeUndefined()
+    expect(store.samples).toHaveLength(1)
+  })
+
+  it("returns null when nothing overlaps the range", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample())
+
+    expect(store.extractRangeAsSample("a", 5, 6)).toBeNull()
+    expect(store.samples).toHaveLength(1)
+  })
+
+  it("deletes a spliced range (ripple) keeping before and after", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(
+      makeSample({
+        chunks: [
+          { id: "c0", start: 0, end: 0.4 },
+          { id: "c1", start: 0.4, end: 1 },
+        ],
+      }),
+    )
+
+    // Delete the middle: spliced 0.2–0.6 spans the tail of c0 and head of c1.
+    const removed = store.deleteRange("a", 0.2, 0.6)
+
+    expect(removed).toBe(false)
+    const chunks = store.samples[0].chunks
+    expect(chunkIds(chunks)).toHaveLength(2)
+    expect(chunks[0]).toEqual(expect.objectContaining({ start: 0, end: 0.2 }))
+    expect(chunks[1]).toEqual(expect.objectContaining({ start: 0.6, end: 1 }))
+  })
+
+  it("deletes the whole sample when the range covers everything", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample())
+    store.addSample(makeSample({ id: "b" }))
+
+    expect(store.deleteRange("a", 0, 1)).toBe(true)
+    expect(store.samples).toHaveLength(1)
+  })
+
+  it("trims the sample to only the selected spliced range", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(
+      makeSample({
+        chunks: [
+          { id: "c0", start: 0, end: 0.2 },
+          { id: "c1", start: 0.4, end: 1 },
+        ],
+      }),
+    )
+
+    const removed = store.trimToRange("a", 0.1, 0.7)
+
+    expect(removed).toBe(false)
+    const chunks = store.samples[0].chunks
+    expect(chunks).toHaveLength(2)
+    // 0.1–0.2 from the first chunk (absolute 0.1–0.2).
+    expect(chunks[0]).toEqual(expect.objectContaining({ start: 0.1, end: 0.2 }))
+    // 0.2–0.7 spliced of the second chunk -> absolute 0.4 + 0.1..0.5 = 0.4..0.9.
+    expect(chunks[1].start).toBeCloseTo(0.4, 5)
+    expect(chunks[1].end).toBeCloseTo(0.9, 5)
+  })
+
+  it("removes the sample when trimming selects nothing", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample())
+
+    expect(store.trimToRange("a", 5, 6)).toBe(true)
+    expect(store.samples).toHaveLength(0)
+  })
+})
+
 describe("project store loudness actions", () => {
   it("scales the sample pcm by a linear factor", () => {
     setActivePinia(createPinia())

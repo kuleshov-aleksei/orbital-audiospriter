@@ -144,24 +144,26 @@ async function runNormalize(wav: Uint8Array, targetLufs: number): Promise<Loudne
     const inputI = json?.input_i
     const inputTp = json?.input_tp
     if (
-      typeof inputI !== "number" ||
-      typeof inputTp !== "number" ||
-      !Number.isFinite(inputI) ||
-      !Number.isFinite(inputTp)
+      typeof inputI === "number" &&
+      typeof inputTp === "number" &&
+      Number.isFinite(inputI) &&
+      Number.isFinite(inputTp)
     ) {
-      throw new Error("cannot normalize silent audio")
+      const gainDb = targetLufs - inputI
+      const result: LoudnessNormalizeResult = {
+        integratedLufs: inputI,
+        gainDb,
+        truePeakDb: inputTp + gainDb,
+        method: "loudnorm",
+      }
+      pushLog([
+        `[normalize] loudnorm: ${inputI.toFixed(1)} LUFS -> ${targetLufs} LUFS, gain ${gainDb.toFixed(2)} dB`,
+      ])
+      return result
     }
-    const gainDb = targetLufs - inputI
-    const result: LoudnessNormalizeResult = {
-      integratedLufs: inputI,
-      gainDb,
-      truePeakDb: inputTp + gainDb,
-      method: "loudnorm",
-    }
-    pushLog([
-      `[normalize] loudnorm: ${inputI.toFixed(1)} LUFS -> ${targetLufs} LUFS, gain ${gainDb.toFixed(2)} dB`,
-    ])
-    return result
+    // loudnorm returns -inf for input shorter than its gating minimum; fall
+    // through to the JS measurement which handles short (but non-silent) audio.
+    pushLog([`[normalize] loudnorm rejected short/silent input, falling back to JS EBU R128`])
   }
 
   const decoded = wav16ToPcm(wav)

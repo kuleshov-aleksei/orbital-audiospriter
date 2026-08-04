@@ -71,7 +71,7 @@
       </div>
 
       <div class="flex flex-col gap-4">
-        <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 max-w-2xl">
+        <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 w-2xl">
           <h3 class="text-sm font-semibold text-zinc-200">
             {{ selected ? selected.fileName : "No sample selected" }}
           </h3>
@@ -125,18 +125,30 @@
             <button
               type="button"
               class="btn-danger"
-              title="Delete the selected piece"
-              :disabled="!selectedChunk"
+              :title="hasSelection ? 'Delete the selected range' : 'Delete the selected piece'"
+              :disabled="!canDeleteSelection"
               @click="deleteSelectedChunk()">
-              🗑 Delete piece
+              {{ hasSelection ? "🗑 Delete selection" : "🗑 Delete piece" }}
             </button>
             <button
               type="button"
               class="btn"
-              title="Promote the selected piece to its own independent sample"
-              :disabled="!selectedChunk"
+              :title="
+                hasSelection
+                  ? 'Move the selected range into its own independent sample'
+                  : 'Promote the selected piece to its own independent sample'
+              "
+              :disabled="!canMakeSfx"
               @click="extractSelectedChunk()">
               ✨ Make SFX
+            </button>
+            <button
+              type="button"
+              class="btn-secondary"
+              title="Remove everything outside the selection"
+              :disabled="!hasSelection"
+              @click="trimToSelection()">
+              Keep only selection
             </button>
             <button
               type="button"
@@ -210,8 +222,9 @@
           <p v-if="saveError" class="mt-2 text-sm text-red-400">{{ saveError }}</p>
 
           <p v-if="selected" class="mt-2 text-xs text-zinc-600">
-            Space/K play · J/L ±2s · Delete removes the selected piece · drag the waveform to select
-            a range, then Cut splits at both ends · piece bounds are absolute source seconds.
+            Space/K play · J/L ±2s · Delete removes the selected range or piece · drag the waveform
+            to select a range, then Cut splits at both ends, Make SFX extracts it, Keep only trims
+            to it · piece bounds are absolute source seconds.
           </p>
         </div>
       </div>
@@ -453,6 +466,20 @@ const selectedChunk = computed(
 const keptDuration = computed(() =>
   selected.value ? chunksTotalDuration(selected.value.chunks) : 0,
 )
+const hasSelection = computed(() => {
+  const sel = selection.value
+  return sel !== null && sel.end - sel.start >= 0.02
+})
+const canDeleteSelection = computed(() => {
+  if (!selected.value) return false
+  if (hasSelection.value) return true
+  return !!selectedChunk.value && selected.value.chunks.length > 1
+})
+const canMakeSfx = computed(() => {
+  if (!selected.value) return false
+  if (hasSelection.value) return true
+  return !!selectedChunk.value && selected.value.chunks.length > 1
+})
 
 const chunkIn = ref(0)
 const chunkOut = ref(0)
@@ -493,8 +520,8 @@ function ensureWavesurfer(): void {
   regions = regionsInstance
   wavesurfer = instance
 
-  waveformEl.value.removeEventListener("pointerdown", onWavePointerDown)
-  waveformEl.value.addEventListener("pointerdown", onWavePointerDown)
+  waveformEl.value.removeEventListener("pointerdown", onWavePointerDown, true)
+  waveformEl.value.addEventListener("pointerdown", onWavePointerDown, true)
 
   instance.on("play", () => (isPlaying.value = true))
   instance.on("pause", () => (isPlaying.value = false))
@@ -515,8 +542,8 @@ function onWavePointerDown(event: PointerEvent): void {
     dragStartTime = timeAtClientX(event.clientX)
     selection.value = { start: dragStartTime, end: dragStartTime }
     renderSelection()
-    window.addEventListener("pointermove", onWavePointerMove)
-    window.addEventListener("pointerup", onWavePointerUp)
+    window.addEventListener("pointermove", onWavePointerMove, true)
+    window.addEventListener("pointerup", onWavePointerUp, true)
   }
 }
 
@@ -531,8 +558,8 @@ function onWavePointerMove(event: PointerEvent): void {
 }
 
 function onWavePointerUp(): void {
-  window.removeEventListener("pointermove", onWavePointerMove)
-  window.removeEventListener("pointerup", onWavePointerUp)
+  window.removeEventListener("pointermove", onWavePointerMove, true)
+  window.removeEventListener("pointerup", onWavePointerUp, true)
   dragSelecting = false
   const sel = selection.value
   if (!sel || sel.end - sel.start < 0.02) {
@@ -543,19 +570,23 @@ function onWavePointerUp(): void {
 
 function renderSelection(): void {
   if (!regions) return
-  if (selectionRegion) {
+  const sel = selection.value
+  const valid = !!sel && sel.end - sel.start >= 0.02 && wavesurferReady.value
+  if (valid) {
+    if (selectionRegion) {
+      selectionRegion.setOptions({ start: sel!.start, end: sel!.end })
+    } else {
+      selectionRegion = regions.addRegion({
+        start: sel!.start,
+        end: sel!.end,
+        color: SELECTION_COLOR,
+        drag: false,
+        resize: false,
+      })
+    }
+  } else if (selectionRegion) {
     selectionRegion.remove()
     selectionRegion = null
-  }
-  const sel = selection.value
-  if (sel && sel.end - sel.start >= 0.02 && wavesurferReady.value) {
-    selectionRegion = regions.addRegion({
-      start: sel.start,
-      end: sel.end,
-      color: SELECTION_COLOR,
-      drag: false,
-      resize: false,
-    })
   }
 }
 
@@ -683,8 +714,21 @@ function cutAtPlayhead(): void {
 
 function deleteSelectedChunk(): void {
   const sample = selected.value
+  if (!sample) return
+  if (hasSelection.value) {
+    const sel = selection.value!
+    pushUndo()
+    const removedAll = store.deleteRange(sample.id, sel.start, sel.end)
+    clearSelection()
+    if (removedAll) {
+      removeSampleUi(sample.id)
+      return
+    }
+    void loadSample(sample.id, false)
+    return
+  }
   const chunk = selectedChunk.value
-  if (!sample || !chunk) return
+  if (!chunk) return
   pushUndo()
   const removedAll = store.deleteChunk(sample.id, chunk.id)
   if (removedAll) {
@@ -694,10 +738,43 @@ function deleteSelectedChunk(): void {
   void loadSample(sample.id, false)
 }
 
+function trimToSelection(): void {
+  const sample = selected.value
+  const sel = selection.value
+  if (!sample || !sel || sel.end - sel.start < 0.02) return
+  pushUndo()
+  const removedAll = store.trimToRange(sample.id, sel.start, sel.end)
+  clearSelection()
+  if (removedAll) {
+    removeSampleUi(sample.id)
+    return
+  }
+  void loadSample(sample.id, false)
+}
+
+function clearSelection(): void {
+  selection.value = null
+  if (selectionRegion) {
+    selectionRegion.remove()
+    selectionRegion = null
+  }
+}
+
 function extractSelectedChunk(): void {
   const sample = selected.value
+  if (!sample) return
+  if (hasSelection.value) {
+    const sel = selection.value!
+    const newId = store.extractRangeAsSample(sample.id, sel.start, sel.end)
+    if (newId) {
+      clearSelection()
+      undoStack.value = []
+      void loadSample(newId)
+    }
+    return
+  }
   const chunk = selectedChunk.value
-  if (!sample || !chunk) return
+  if (!chunk) return
   const newId = store.extractChunkAsSample(sample.id, chunk.id)
   if (newId) {
     undoStack.value = []
