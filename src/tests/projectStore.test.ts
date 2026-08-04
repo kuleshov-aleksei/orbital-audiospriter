@@ -119,3 +119,82 @@ describe("project store cut/delete chunks", () => {
     expect(store.setChunkRange("a", "nope", 0, 1)).toBe(false)
   })
 })
+
+describe("project store loudness actions", () => {
+  it("scales the sample pcm by a linear factor", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    const pcm = new Float32Array([0.5, -0.25, 0.125])
+    store.addSample(makeSample({ pcm }))
+
+    store.scaleSamplePcm("a", 2)
+
+    expect(store.samples[0].pcm![0]).toBeCloseTo(1, 5)
+    expect(store.samples[0].pcm![1]).toBeCloseTo(-0.5, 5)
+    expect(store.samples[0].pcm![2]).toBeCloseTo(0.25, 5)
+  })
+
+  it("ignores scaling when the sample has no pcm", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample({ pcm: null }))
+
+    expect(() => store.scaleSamplePcm("a", 2)).not.toThrow()
+  })
+
+  it("records and stores the loudness result plus target", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample())
+
+    store.setLoudness("a", {
+      integratedLufs: -11.2,
+      gainDb: -11.8,
+      truePeakDb: -0.5,
+      method: "loudnorm",
+    })
+    store.setSampleTargetLufs("a", -23)
+
+    expect(store.samples[0].loudness).toEqual({
+      integratedLufs: -11.2,
+      gainDb: -11.8,
+      truePeakDb: -0.5,
+      method: "loudnorm",
+    })
+    expect(store.samples[0].targetLufs).toBe(-23)
+  })
+
+  it("undoes a normalization by applying the inverse gain and clears the result", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    const pcm = new Float32Array([0.5, -0.5])
+    store.addSample(
+      makeSample({
+        pcm,
+        loudness: {
+          integratedLufs: -11.2,
+          gainDb: -11.8,
+          truePeakDb: -3,
+          method: "r128",
+        },
+        targetLufs: -23,
+      }),
+    )
+    const restored = pcm.map((v) => v * Math.pow(10, +11.8 / 20))
+
+    store.undoNormalize("a")
+
+    expect(store.samples[0].loudness).toBeUndefined()
+    expect(store.samples[0].targetLufs).toBe(DEFAULT_TARGET_LUFS)
+    expect(store.samples[0].pcm![0]).toBeCloseTo(restored[0], 5)
+    expect(store.samples[0].pcm![1]).toBeCloseTo(restored[1], 5)
+  })
+
+  it("returns false when there is nothing to undo", () => {
+    setActivePinia(createPinia())
+    const store = useProjectStore()
+    store.addSample(makeSample())
+
+    expect(store.undoNormalize("a")).toBe(false)
+  })
+})

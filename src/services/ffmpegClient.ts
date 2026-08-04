@@ -1,5 +1,6 @@
 import type {
   Capabilities,
+  LoudnessNormalizeData,
   SelfTestResult,
   WorkerRequest,
   WorkerResponse,
@@ -49,17 +50,22 @@ function getWorker(): Worker {
   return worker
 }
 
-function request(kind: WorkerRequest["kind"]): Promise<WorkerResponse> {
+type RequestPayload =
+  | { kind: "capabilities" }
+  | { kind: "selftest" }
+  | { kind: "normalize"; wav: Uint8Array; targetLufs: number }
+
+function request(payload: RequestPayload): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
     const id = nextId++
     pending.set(id, { resolve, reject })
-    const message: WorkerRequest = { id, kind }
+    const message: WorkerRequest = { id, ...payload }
     getWorker().postMessage(message)
   })
 }
 
 export async function checkCapabilities(): Promise<Capabilities> {
-  const response = await request("capabilities")
+  const response = await request({ kind: "capabilities" })
   if (!response.ok || !response.data) {
     throw new Error(response.error || "capability check failed")
   }
@@ -67,11 +73,22 @@ export async function checkCapabilities(): Promise<Capabilities> {
 }
 
 export async function runSelfTest(): Promise<SelfTestResult> {
-  const response = await request("selftest")
+  const response = await request({ kind: "selftest" })
   if (!response.ok || !response.data) {
     throw new Error(response.error || "self-test failed")
   }
   return response.data as SelfTestResult
+}
+
+export async function normalizeAudio(
+  wav: Uint8Array,
+  targetLufs: number,
+): Promise<LoudnessNormalizeData> {
+  const response = await request({ kind: "normalize", wav, targetLufs })
+  if (!response.ok || !response.data) {
+    throw new Error(response.error || "normalization failed")
+  }
+  return response.data as LoudnessNormalizeData
 }
 
 export function getLogs(): string[] {

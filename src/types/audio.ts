@@ -64,6 +64,8 @@ export interface LoudnessResult {
   integratedLufs: number
   gainDb: number
   truePeakDb: number
+  /** loudnorm two-pass (preferred) or JS EBU R128 + volume filter. */
+  method: "loudnorm" | "r128"
 }
 
 export interface SpriteEntry {

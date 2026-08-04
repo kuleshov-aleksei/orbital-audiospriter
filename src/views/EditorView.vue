@@ -1,14 +1,14 @@
 <template>
-  <div class="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-8">
+  <div class="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-8">
     <div>
-      <h2 class="text-xl font-semibold text-zinc-100">Phase 3 — Import + editor</h2>
+      <h2 class="text-xl font-semibold text-zinc-100">Phase 4 — Editor + loudness</h2>
       <p class="mt-1 max-w-3xl text-sm text-zinc-400">
-        Decode samples with the native <code class="text-violet-300">AudioContext</code> (mono 44.1
-        kHz), cut into pieces at the playhead, select a piece and delete it.
+        Cut samples into pieces at the playhead, select a piece and delete it, then normalize
+        loudness to a target LUFS value (default −23, EBU R128).
       </p>
     </div>
 
-    <section class="grid gap-6 lg:grid-cols-[320px_1fr]">
+    <section class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)_260px]">
       <div class="flex flex-col gap-4">
         <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
           <h3 class="text-sm font-semibold text-zinc-200">Import</h3>
@@ -181,6 +181,66 @@
           </p>
         </div>
       </div>
+
+      <div class="flex flex-col gap-4">
+        <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <h3 class="text-sm font-semibold text-zinc-200">Loudness normalization</h3>
+          <label class="mt-2 flex items-center gap-2 text-xs text-zinc-500">
+            Target
+            <select
+              v-model.number="store.targetLufs"
+              class="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-200">
+              <option v-for="preset in LUFS_PRESETS" :key="preset.value" :value="preset.value">
+                {{ preset.label }}
+              </option>
+            </select>
+          </label>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <p v-if="selected && measuredLufs !== null" class="text-xs text-zinc-400">
+              <span class="text-zinc-500">Measured:</span>
+              <span class="font-mono text-zinc-100">{{ measuredLufs.toFixed(1) }} LUFS</span>
+            </p>
+            <p v-else-if="selected" class="text-xs text-zinc-500">Selected piece is silent.</p>
+          </div>
+          <button
+            type="button"
+            class="btn mt-2"
+            :disabled="!selected || measuredLufs === null || normalizing"
+            @click="normalizeSelected()">
+            {{ normalizing ? "Normalizing…" : `Normalize to ${store.targetLufs} LUFS` }}
+          </button>
+          <button
+            type="button"
+            class="btn-secondary mt-2"
+            :disabled="store.samples.length === 0 || normalizing"
+            @click="normalizeAll()">
+            {{
+              normalizing
+                ? `Normalizing ${normalizeDone}/${normalizeTotal}…`
+                : `Normalize all (${store.samples.length})`
+            }}
+          </button>
+          <div v-if="selected?.loudness" class="mt-2 space-y-1 text-[11px] text-zinc-500">
+            <p>
+              Applied
+              <span class="font-mono text-zinc-300">
+                {{ selected.loudness.gainDb > 0 ? "+" : ""
+                }}{{ selected.loudness.gainDb.toFixed(1) }}
+                dB
+              </span>
+              via {{ selected.loudness.method === "loudnorm" ? "loudnorm" : "EBU R128" }} ·
+              <span class="text-zinc-400">after ≈ {{ measuredLufs?.toFixed(1) }} LUFS</span>
+            </p>
+            <button
+              type="button"
+              class="text-violet-300 transition hover:text-violet-200"
+              @click="undoNormalizeUi()">
+              ↺ Undo normalization
+            </button>
+          </div>
+          <p v-if="normalizeError" class="mt-2 text-sm text-red-400">{{ normalizeError }}</p>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -192,15 +252,32 @@ import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.js"
 import type { Region } from "wavesurfer.js/dist/plugins/regions.js"
 import { useProjectStore } from "@/stores/project"
 import { decodeAudioFile } from "@/services/audioDecode"
+import { normalizeAudio } from "@/services/ffmpegClient"
 import { listAudioFiles, readFileBytes } from "@/services/fsAccess"
 import type { Sample, SampleChunk } from "@/types/audio"
 import { DEFAULT_TARGET_LUFS } from "@/types/audio"
 import { chunksTotalDuration, spliceChunks } from "@/utils/chunks"
+import { measureLoudness } from "@/utils/loudness"
 import { pcmToWav16 } from "@/utils/wav"
 
 defineOptions({ name: "EditorView" })
 
 const store = useProjectStore()
+
+const LUFS_PRESETS: ReadonlyArray<{ value: number; label: string }> = [
+  { value: -14, label: "-14 LUFS" },
+  { value: -16, label: "-16 LUFS" },
+  { value: -18, label: "-18 LUFS" },
+  { value: -20, label: "-20 LUFS" },
+  { value: -23, label: "-23 LUFS" },
+  { value: -26, label: "-26 LUFS" },
+]
+
+const normalizing = ref(false)
+const normalizeDone = ref(0)
+const normalizeTotal = ref(0)
+const normalizeError = ref<string | null>(null)
+const measuredLufs = ref<number | null>(null)
 
 const importing = ref(false)
 const importDone = ref(0)
@@ -380,6 +457,8 @@ async function loadSample(id: string, preserveChunk = false): Promise<void> {
     selectionRegion = null
   }
   const spliced = spliceChunks(sample.pcm, sample.chunks, sample.sampleRate)
+  const measured = measureLoudness(spliced, sample.sampleRate)
+  measuredLufs.value = Number.isFinite(measured.integratedLufs) ? measured.integratedLufs : null
   const wav = pcmToWav16(spliced, sample.sampleRate)
   await wavesurfer.loadBlob(new Blob([wav.buffer as ArrayBuffer]))
   regionByChunk.clear()
@@ -598,6 +677,7 @@ function removeSampleUi(id: string): void {
   store.removeSample(id)
   if (selectedId.value === id) {
     selectedId.value = null
+    measuredLufs.value = null
     if (wavesurfer) {
       wavesurfer.destroy()
       wavesurfer = null
@@ -605,6 +685,71 @@ function removeSampleUi(id: string): void {
       wavesurferReady.value = false
       regionByChunk.clear()
     }
+  }
+}
+
+async function normalizeSample(sample: Sample): Promise<void> {
+  if (!sample.pcm) return
+  const spliced = spliceChunks(sample.pcm, sample.chunks, sample.sampleRate)
+  const measured = measureLoudness(spliced, sample.sampleRate)
+  if (!Number.isFinite(measured.integratedLufs)) return
+  const wav = pcmToWav16(spliced, sample.sampleRate)
+  const { result } = await normalizeAudio(wav, store.targetLufs)
+  store.scaleSamplePcm(sample.id, Math.pow(10, result.gainDb / 20))
+  store.setLoudness(sample.id, result)
+  store.setSampleTargetLufs(sample.id, store.targetLufs)
+}
+
+async function normalizeSelected(): Promise<void> {
+  const sample = selected.value
+  if (!sample || normalizing.value) return
+  normalizing.value = true
+  normalizeError.value = null
+  try {
+    await normalizeSample(sample)
+    if (selectedId.value === sample.id) {
+      void loadSample(sample.id, true)
+    }
+  } catch (error) {
+    normalizeError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    normalizing.value = false
+  }
+}
+
+function undoNormalizeUi(): void {
+  const sample = selected.value
+  if (!sample) return
+  if (store.undoNormalize(sample.id)) {
+    void loadSample(sample.id, true)
+  }
+}
+
+async function normalizeAll(): Promise<void> {
+  if (normalizing.value) return
+  normalizing.value = true
+  normalizeError.value = null
+  const toNormalize = store.samples
+  normalizeTotal.value = toNormalize.length
+  normalizeDone.value = 0
+  try {
+    for (const sample of toNormalize) {
+      if (sample.pcm) {
+        try {
+          await normalizeSample(sample)
+        } catch (error) {
+          normalizeError.value = `"${sample.fileName}": ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        }
+      }
+      normalizeDone.value++
+    }
+    if (selected.value) {
+      await loadSample(selected.value.id, true)
+    }
+  } finally {
+    normalizing.value = false
   }
 }
 

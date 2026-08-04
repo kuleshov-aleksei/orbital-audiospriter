@@ -1,6 +1,6 @@
 import { defineStore } from "pinia"
 import { computed, ref } from "vue"
-import type { ProjectState, Sample, SampleChunk } from "@/types/audio"
+import type { LoudnessResult, ProjectState, Sample, SampleChunk } from "@/types/audio"
 import { DEFAULT_TARGET_LUFS } from "@/types/audio"
 import { clampChunkRange, removeChunkById, splitChunkAt } from "@/utils/chunks"
 import {
@@ -141,6 +141,48 @@ export const useProjectStore = defineStore("project", () => {
     return true
   }
 
+  /** Record the result of the last loudness normalization. */
+  function setLoudness(id: string, loudness: LoudnessResult | undefined): void {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample) return
+    if (loudness === undefined) {
+      sample.loudness = undefined
+    } else {
+      sample.loudness = loudness
+    }
+  }
+
+  /** Multiply the sample PCM by a linear gain factor (in place). */
+  function scaleSamplePcm(id: string, factor: number): void {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample || !sample.pcm) return
+    for (let i = 0; i < sample.pcm.length; i++) {
+      sample.pcm[i] *= factor
+    }
+  }
+
+  /** Set the per-sample target loudness used by the last normalization. */
+  function setSampleTargetLufs(id: string, lufs: number): void {
+    const sample = samples.value.find((s) => s.id === id)
+    if (sample) sample.targetLufs = lufs
+  }
+
+  /**
+   * Reverse the last normalization by applying the inverse gain. Returns
+   * false when the sample has no recorded normalization to undo.
+   */
+  function undoNormalize(id: string): boolean {
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample || !sample.loudness || !sample.pcm) return false
+    const factor = Math.pow(10, -sample.loudness.gainDb / 20)
+    for (let i = 0; i < sample.pcm.length; i++) {
+      sample.pcm[i] *= factor
+    }
+    sample.loudness = undefined
+    sample.targetLufs = DEFAULT_TARGET_LUFS
+    return true
+  }
+
   function snapshot(): ProjectState {
     return {
       sourceDirHandle: sourceDirHandle.value,
@@ -176,6 +218,10 @@ export const useProjectStore = defineStore("project", () => {
     cutSample,
     deleteChunk,
     setChunkRange,
+    setLoudness,
+    scaleSamplePcm,
+    setSampleTargetLufs,
+    undoNormalize,
     snapshot,
   }
 })
