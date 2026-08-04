@@ -1,12 +1,10 @@
 <template>
   <div class="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-8">
     <div>
-      <h2 class="text-xl font-semibold text-zinc-100">
-        Phase 1 spike — codec/filter capability matrix
-      </h2>
+      <h2 class="text-xl font-semibold text-zinc-100">FFmpeg environment test</h2>
       <p class="mt-1 max-w-3xl text-sm text-zinc-400">
         Verifies the published <code class="text-violet-300">@ffmpeg/core-st</code> build supports
-        what the spec needs: MP3 (libmp3lame), OGG (libvorbis/libopus), M4A (aac/libfdk_aac) and the
+        what the app needs: MP3 (libmp3lame), OGG (libvorbis/libopus), M4A (aac/libfdk_aac) and the
         <code class="text-violet-300">loudnorm</code> filter. No result here is fatal — each has a
         documented fallback.
       </p>

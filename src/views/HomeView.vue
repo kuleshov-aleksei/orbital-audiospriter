@@ -9,7 +9,7 @@
     </div>
 
     <section class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
-      <h3 class="text-sm font-semibold text-zinc-200">Phase 2 — File System Access</h3>
+      <h3 class="text-sm font-semibold text-zinc-200">Folders</h3>
       <p class="mt-1 text-xs text-zinc-500">
         Directory handles are persisted in IndexedDB and re-validated on reload; permission can be
         re-requested in place.
@@ -120,23 +120,6 @@
           </li>
         </ul>
       </div>
-
-      <div v-if="store.sourceGranted" class="mt-4 flex items-center gap-3">
-        <button
-          type="button"
-          class="btn-secondary"
-          :disabled="probeStatus === 'writing'"
-          @click="probeWrite()">
-          {{ probeStatus === "writing" ? "Writing…" : "Probe write-back" }}
-        </button>
-        <p v-if="probeStatus === 'done'" class="text-sm text-emerald-400">
-          Wrote <code class="font-mono">__audiosprter_write_probe.txt</code> to the samples folder.
-        </p>
-        <p v-else-if="probeStatus === 'error'" class="text-sm text-red-400">{{ probeError }}</p>
-        <p v-else class="text-xs text-zinc-500">
-          Creates a small text file in the samples folder to prove create+writable works.
-        </p>
-      </div>
     </section>
 
     <section class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
@@ -226,23 +209,6 @@
         MP3/OGG/M4A…
       </p>
     </section>
-
-    <section class="grid gap-3 sm:grid-cols-2">
-      <div
-        v-for="phase in phases"
-        :key="phase.title"
-        class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
-        <h3 class="text-sm font-semibold text-zinc-200">{{ phase.title }}</h3>
-        <p class="mt-1 text-xs text-zinc-500">{{ phase.description }}</p>
-        <p class="mt-3">
-          <span
-            class="inline-block rounded px-2 py-0.5 text-xs font-medium"
-            :class="phase.done ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'"
-            >{{ phase.done ? "done" : "pending" }}</span
-          >
-        </p>
-      </div>
-    </section>
   </div>
 </template>
 
@@ -264,8 +230,6 @@ const store = useProjectStore()
 
 const files = ref<AudioFileEntry[]>([])
 const filesError = ref<string | null>(null)
-const probeStatus = ref<"idle" | "writing" | "done" | "error">("idle")
-const probeError = ref<string | null>(null)
 
 const packSaving = ref(false)
 const packStatus = ref<string | null>(null)
@@ -334,49 +298,6 @@ async function exportSprite(): Promise<void> {
   }
 }
 
-const phases = [
-  {
-    title: "Phase 1 — Scaffold + spike",
-    description: "Vue/Vite/PWA shell and ffmpeg.wasm codec/filter verification.",
-    done: true,
-  },
-  {
-    title: "Phase 2 — File System Access",
-    description: "Open dirs, read/write files, persist handles in IndexedDB.",
-    done: true,
-  },
-  {
-    title: "Phase 3 — Import + editor",
-    description: "decodeAudioData → PCM, wavesurfer.js waveform, trim regions, undo.",
-    done: true,
-  },
-  {
-    title: "Phase 4 — Loudness",
-    description: "JS EBU R128 to -23 LUFS with before/after preview.",
-    done: true,
-  },
-  {
-    title: "Phase 5 — Per-sample save",
-    description: "Encode mono MP3 and write back to the source dir.",
-    done: true,
-  },
-  {
-    title: "Phase 6 — Event assignment",
-    description: "Multi-assign orbital events, alias suggestions.",
-    done: true,
-  },
-  {
-    title: "Phase 7 — Sprite export",
-    description: "Sample-accurate concat, 3 formats, .json + .ts generation.",
-    done: true,
-  },
-  {
-    title: "Phase 8 — Polish",
-    description: "Error states, permission flows, offline verification.",
-    done: false,
-  },
-]
-
 function statusLabel(status: DirStatus): string {
   switch (status) {
     case "granted":
@@ -441,24 +362,6 @@ async function refreshFiles(): Promise<void> {
     files.value = await listAudioFiles(dir)
   } catch (error) {
     filesError.value = error instanceof Error ? error.message : String(error)
-  }
-}
-
-async function probeWrite(): Promise<void> {
-  const dir = store.sourceDirHandle
-  if (!dir) return
-  probeStatus.value = "writing"
-  probeError.value = null
-  try {
-    const payload = new TextEncoder().encode(
-      `orbital-audiospriter write probe\n${new Date().toISOString()}\n`,
-    )
-    await writeFileToDir(dir, "__audiosprter_write_probe.txt", payload)
-    probeStatus.value = "done"
-    await refreshFiles()
-  } catch (error) {
-    probeStatus.value = "error"
-    probeError.value = error instanceof Error ? error.message : String(error)
   }
 }
 

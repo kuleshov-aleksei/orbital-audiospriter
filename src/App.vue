@@ -40,7 +40,7 @@
                 : 'text-zinc-400 hover:text-zinc-200'
             "
             @click="view = 'spike'">
-            Spike
+            FFmpeg test
           </button>
         </nav>
       </div>
