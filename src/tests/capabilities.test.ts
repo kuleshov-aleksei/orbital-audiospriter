@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { detectCapabilities, parseEncoderNames, parseFilterNames } from "@/services/capabilities"
 
@@ -62,3 +63,36 @@ describe("detectCapabilities", () => {
     expect(verdict.loudnorm).toBe(false)
   })
 })
+
+describe("real ffmpeg output fixtures (core-st 0.11.1)", () => {
+  const encoders = parseEncoderNames(readFixture("encoders.txt"))
+  const filters = parseFilterNames(readFixture("filters.txt"))
+
+  it("parses the actual -encoders output", () => {
+    expect(encoders).toContain("libmp3lame")
+    expect(encoders).toContain("libvorbis")
+    expect(encoders).toContain("libopus")
+    expect(encoders).toContain("libfdk_aac")
+    expect(encoders).toContain("aac")
+    expect(encoders).toContain("pcm_s16le")
+  })
+
+  it("parses the actual -filters output", () => {
+    expect(filters).toContain("loudnorm")
+    expect(filters).toContain("volume")
+    expect(filters).toContain("aresample")
+    expect(filters).toContain("ebur128")
+  })
+
+  it("derives a full green verdict from real output", () => {
+    const verdict = detectCapabilities(encoders, filters)
+    expect(verdict.mp3).toEqual({ ok: true, encoder: "libmp3lame" })
+    expect(verdict.ogg).toEqual({ ok: true, encoder: "libvorbis" })
+    expect(verdict.m4a).toEqual({ ok: true, encoder: "libfdk_aac" })
+    expect(verdict.loudnorm).toBe(true)
+  })
+})
+
+function readFixture(name: string): string {
+  return readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf-8")
+}

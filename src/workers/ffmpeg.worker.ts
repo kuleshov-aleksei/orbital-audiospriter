@@ -20,13 +20,14 @@ function pushLog(lines: string[]): void {
   for (const line of lines) {
     logTail.push(line)
   }
-  while (logTail.length > 500) {
+  while (logTail.length > 2000) {
     logTail.shift()
   }
 }
 
 let ffmpeg: FFmpeg | null = null
 let coreInfo: Capabilities["core"] | null = null
+let requestMarker = 0
 
 async function loadFfmpeg(): Promise<FFmpeg> {
   if (ffmpeg) return ffmpeg
@@ -35,8 +36,12 @@ async function loadFfmpeg(): Promise<FFmpeg> {
   const loaded = new FFmpeg()
   loaded.on("log", ({ message }) => pushLog([message]))
 
+  // The core JS is served from /public, so Vite forbids static imports of it. Blob-import it
+  // instead: the copy script wraps the UMD with an ESM `export default`, so `import(blobURL)`
+  // yields `.default`. The single-thread core resolves its wasm via the injected `locateFile`
+  // (see scripts/copy-ffmpeg-core.mjs), pinned to the same-origin /ffmpeg/ path.
   const coreURL = await toBlobURL(`${CORE_BASE}/ffmpeg-core.js`, "text/javascript")
-  const wasmURL = await toBlobURL(`${CORE_BASE}/ffmpeg-core.wasm`, "application/wasm")
+  const wasmURL = `${CORE_BASE}/ffmpeg-core.wasm`
 
   await loaded.load({ coreURL, wasmURL })
 
@@ -53,7 +58,11 @@ async function loadFfmpeg(): Promise<FFmpeg> {
 
 async function runCapabilities(): Promise<Capabilities> {
   const instance = await loadFfmpeg()
-  const before = logTail.length
+
+  // Mark the log ring before this request's commands. Index-based slicing breaks once
+  // the ring cap shifts out earlier entries (the two listing commands emit ~600 lines).
+  const marker = `__cap_start__${requestMarker++}`
+  pushLog([marker])
 
   const encoderCode = await instance.exec(["-hide_banner", "-encoders"])
   const filterCode = await instance.exec(["-hide_banner", "-filters"])
@@ -61,7 +70,8 @@ async function runCapabilities(): Promise<Capabilities> {
     throw new Error(`ffmpeg -encoders/-filters failed (codes ${encoderCode}/${filterCode})`)
   }
 
-  const output = logTail.slice(before).join("\n")
+  const markerIdx = logTail.lastIndexOf(marker)
+  const output = (markerIdx >= 0 ? logTail.slice(markerIdx + 1) : []).join("\n")
 
   return {
     core: coreInfo!,
