@@ -176,6 +176,24 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   /**
+   * Rename a sample. Returns an error message on failure or null on success.
+   * The name cannot be empty and must stay unique among samples.
+   */
+  function renameSample(id: string, newName: string): string | null {
+    const trimmed = newName.trim()
+    if (!trimmed) return "name cannot be empty"
+    const sample = samples.value.find((s) => s.id === id)
+    if (!sample) return "sample not found"
+    if (
+      samples.value.some((s) => s.id !== id && s.fileName.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      return `"${trimmed}" is already used by another sample`
+    }
+    sample.fileName = trimmed
+    return null
+  }
+
+  /**
    * Toggle an event on a sample, keeping the "one sfx per event" invariant:
    * assigning an event steals it from any other sample that currently owns it.
    * Returns whether the event is now assigned to the sample.
@@ -467,6 +485,7 @@ export const useProjectStore = defineStore("project", () => {
     addSample,
     removeSample,
     setAssignedEvents,
+    renameSample,
     toggleAssignedEvent,
     setChunks,
     cutSample,

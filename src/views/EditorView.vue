@@ -51,15 +51,60 @@
               "
               @click="selectSample(sample.id)">
               <div class="flex items-center justify-between gap-2">
-                <span class="truncate font-mono text-xs text-zinc-200">{{ sample.fileName }}</span>
-                <button
-                  type="button"
-                  class="text-zinc-600 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
-                  title="Remove sample"
-                  @click.stop="removeSampleUi(sample.id)">
-                  ✕
-                </button>
+                <span
+                  v-if="renamingId !== sample.id"
+                  class="truncate font-mono text-xs text-zinc-200"
+                  >{{ sample.fileName }}</span
+                >
+                <input
+                  v-else
+                  ref="renameInput"
+                  v-model="renameDraft"
+                  type="text"
+                  class="w-full min-w-0 truncate rounded bg-zinc-800 px-1 py-0.5 font-mono text-xs text-zinc-100 outline-none ring-1 ring-violet-600"
+                  @click.stop
+                  @keydown.enter.prevent="commitRename()"
+                  @keydown.esc.prevent="cancelRename()"
+                  @blur="commitRename()" />
+                <div class="flex shrink-0 items-center gap-1">
+                  <button
+                    v-if="renamingId !== sample.id"
+                    type="button"
+                    class="text-zinc-600 opacity-0 transition hover:text-violet-400 group-hover:opacity-100"
+                    title="Rename sample"
+                    @click.stop="startRename(sample.id)">
+                    <PhPencil :size="13" weight="bold" />
+                  </button>
+                  <template v-else>
+                    <button
+                      type="button"
+                      class="text-zinc-400 hover:text-emerald-400"
+                      title="Save name"
+                      @click.stop="commitRename()">
+                      <PhCheck :size="13" weight="bold" />
+                    </button>
+                    <button
+                      type="button"
+                      class="text-zinc-400 hover:text-red-400"
+                      title="Cancel"
+                      @click.stop="cancelRename()">
+                      <PhX :size="13" weight="bold" />
+                    </button>
+                  </template>
+                  <button
+                    type="button"
+                    class="text-zinc-600 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                    title="Remove sample"
+                    @click.stop="removeSampleUi(sample.id)">
+                    <PhTrash :size="13" weight="bold" />
+                  </button>
+                </div>
               </div>
+              <p
+                v-if="renamingId === sample.id && renameError"
+                class="mt-1 text-[11px] text-red-400">
+                {{ renameError }}
+              </p>
               <div class="mt-0.5 text-[11px] text-zinc-500">
                 {{ keptDurationOf(sample).toFixed(2) }} s kept · {{ sample.chunks.length }} piece{{
                   sample.chunks.length === 1 ? "" : "s"
@@ -117,7 +162,11 @@
                 @click="zoomBy(1)">
                 <PhMagnifyingGlassPlus :size="14" weight="bold" class="inline" />
               </button>
-              <button type="button" class="btn-secondary" :disabled="!canUndo" @click="undoChunks()">
+              <button
+                type="button"
+                class="btn-secondary"
+                :disabled="!canUndo"
+                @click="undoChunks()">
                 <PhArrowCounterClockwise :size="14" weight="bold" class="mr-1.5 inline" />
                 Undo edit
               </button>
@@ -186,7 +235,9 @@
                 @click="saveAll()">
                 <PhFloppyDisk :size="14" weight="bold" class="mr-1.5 inline" />
                 {{
-                  saving ? `Encoding ${saveDone}/${saveTotal}…` : `Save all (${store.samples.length})`
+                  saving
+                    ? `Encoding ${saveDone}/${saveTotal}…`
+                    : `Save all (${store.samples.length})`
                 }}
               </button>
             </div>
@@ -371,6 +422,7 @@ import type { Region } from "wavesurfer.js/dist/plugins/regions.js"
 import {
   PhArrowCounterClockwise,
   PhArrowsCounterClockwise,
+  PhCheck,
   PhCrop,
   PhFloppyDisk,
   PhHeadphones,
@@ -378,9 +430,11 @@ import {
   PhMagnifyingGlassMinus,
   PhMagnifyingGlassPlus,
   PhPause,
+  PhPencil,
   PhPlay,
   PhScissors,
   PhTrash,
+  PhX,
 } from "@phosphor-icons/vue"
 import { useProjectStore } from "@/stores/project"
 import { encodeMp3, normalizeAudio } from "@/services/ffmpegClient"
@@ -857,6 +911,38 @@ function removeSampleUi(id: string): void {
       regionByChunk.clear()
     }
   }
+}
+
+const renamingId = ref<string | null>(null)
+const renameDraft = ref<string>("")
+const renameError = ref<string | null>(null)
+const renameInput = useTemplateRef("renameInput")
+
+function startRename(id: string): void {
+  const sample = store.samples.find((s) => s.id === id)
+  if (!sample) return
+  renamingId.value = id
+  renameDraft.value = sample.fileName
+  renameError.value = null
+  void nextTick(() => renameInput.value?.[0]?.focus())
+}
+
+function commitRename(): void {
+  if (renamingId.value === null) return
+  const error = store.renameSample(renamingId.value, renameDraft.value)
+  if (error) {
+    renameError.value = error
+    return
+  }
+  renamingId.value = null
+  renameDraft.value = ""
+  renameError.value = null
+}
+
+function cancelRename(): void {
+  renamingId.value = null
+  renameDraft.value = ""
+  renameError.value = null
 }
 
 async function normalizeSample(sample: Sample): Promise<void> {
