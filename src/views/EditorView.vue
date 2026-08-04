@@ -90,105 +90,106 @@
             Import or select a sample.
           </p>
 
-          <div v-if="selected" class="mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" class="btn" :disabled="!wavesurferReady" @click="togglePlay()">
-              <PhPlay v-if="!isPlaying" :size="14" weight="bold" class="mr-1.5 inline" />
-              <PhPause v-else :size="14" weight="bold" class="mr-1.5 inline" />
-              {{ isPlaying ? "Pause" : "Play" }}
-            </button>
-            <span class="font-mono text-xs text-zinc-400">
-              {{ formatTime(currentTime) }} / {{ selected ? formatTime(selected.duration) : "" }}
-            </span>
-            <span class="h-4 w-px bg-zinc-700"></span>
-            <button
-              type="button"
-              class="btn-danger"
-              title="Split the piece under the playhead"
-              :disabled="!wavesurferReady || !canCut"
-              @click="cutAtPlayhead()">
-              <PhScissors :size="14" weight="bold" class="mr-1.5 inline" />
-              Cut
-            </button>
-            <button
-              type="button"
-              class="btn-danger"
-              :title="hasSelection ? 'Delete the selected range' : 'Delete the selected piece'"
-              :disabled="!canDeleteSelection"
-              @click="deleteSelectedChunk()">
-              <PhTrash :size="14" weight="bold" class="mr-1.5 inline" />
-              {{ hasSelection ? "Delete selection" : "Delete piece" }}
-            </button>
-            <button
-              type="button"
-              class="btn"
-              :title="
-                hasSelection
-                  ? 'Move the selected range into its own independent sample'
-                  : 'Promote the selected piece to its own independent sample'
-              "
-              :disabled="!canMakeSfx"
-              @click="extractSelectedChunk()">
-              <PhMagicWand :size="14" weight="bold" class="mr-1.5 inline" />
-              Make SFX
-            </button>
-            <button
-              type="button"
-              class="btn-secondary"
-              title="Remove everything outside the selection"
-              :disabled="!hasSelection"
-              @click="trimToSelection()">
-              <PhCrop :size="14" weight="bold" class="mr-1.5 inline" />
-              Keep only selection
-            </button>
-            <button
-              type="button"
-              class="btn-secondary"
-              title="Zoom out"
-              :disabled="!wavesurferReady"
-              @click="zoomBy(-1)">
-              <PhMagnifyingGlassMinus :size="14" weight="bold" class="inline" />
-            </button>
-            <span class="font-mono text-xs text-zinc-500">{{ zoomLevel.toFixed(1) }}×</span>
-            <button
-              type="button"
-              class="btn-secondary"
-              title="Zoom in"
-              :disabled="!wavesurferReady"
-              @click="zoomBy(1)">
-              <PhMagnifyingGlassPlus :size="14" weight="bold" class="inline" />
-            </button>
-          </div>
-
-          <div v-if="selected" class="mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" class="btn-secondary" :disabled="!canUndo" @click="undoChunks()">
-              <PhArrowCounterClockwise :size="14" weight="bold" class="mr-1.5 inline" />
-              Undo edit
-            </button>
-            <button type="button" class="btn-secondary" @click="resetChunks()">
-              <PhArrowsCounterClockwise :size="14" weight="bold" class="mr-1.5 inline" />
-              Reset pieces
-            </button>
-            <span class="h-4 w-px bg-zinc-700"></span>
-            <button
-              type="button"
-              class="btn"
-              title="Encode kept pieces as mono MP3 and write it back to the source folder"
-              :disabled="saving || !selected.pcm"
-              @click="saveSelected()">
-              <PhFloppyDisk :size="14" weight="bold" class="mr-1.5 inline" />
-              {{ saving ? "Encoding…" : "Save MP3" }}
-            </button>
-            <button
-              type="button"
-              class="btn-secondary"
-              title="Encode every imported sample to MP3 and write them all back"
-              :disabled="saving || store.samples.length === 0"
-              @click="saveAll()">
-              <PhFloppyDisk :size="14" weight="bold" class="mr-1.5 inline" />
-              {{
-                saving ? `Encoding ${saveDone}/${saveTotal}…` : `Save all (${store.samples.length})`
-              }}
-            </button>
+          <div v-if="selected">
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button type="button" class="btn" :disabled="!wavesurferReady" @click="togglePlay()">
+                <PhPlay v-if="!isPlaying" :size="14" weight="bold" class="mr-1.5 inline" />
+                <PhPause v-else :size="14" weight="bold" class="mr-1.5 inline" />
+                {{ isPlaying ? "Pause" : "Play" }}
+              </button>
+              <span class="font-mono text-xs text-zinc-400">
+                {{ formatTime(currentTime) }} / {{ selected ? formatTime(selected.duration) : "" }}
+              </span>
+              <button
+                type="button"
+                class="btn-secondary"
+                title="Zoom out"
+                :disabled="!wavesurferReady"
+                @click="zoomBy(-1)">
+                <PhMagnifyingGlassMinus :size="14" weight="bold" class="inline" />
+              </button>
+              <span class="font-mono text-xs text-zinc-500">{{ zoomLevel.toFixed(1) }}×</span>
+              <button
+                type="button"
+                class="btn-secondary"
+                title="Zoom in"
+                :disabled="!wavesurferReady"
+                @click="zoomBy(1)">
+                <PhMagnifyingGlassPlus :size="14" weight="bold" class="inline" />
+              </button>
+              <button type="button" class="btn-secondary" :disabled="!canUndo" @click="undoChunks()">
+                <PhArrowCounterClockwise :size="14" weight="bold" class="mr-1.5 inline" />
+                Undo edit
+              </button>
+              <button type="button" class="btn-secondary" @click="resetChunks()">
+                <PhArrowsCounterClockwise :size="14" weight="bold" class="mr-1.5 inline" />
+                Reset pieces
+              </button>
+            </div>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="btn-danger"
+                title="Split the piece under the playhead"
+                :disabled="!wavesurferReady || !canCut"
+                @click="cutAtPlayhead()">
+                <PhScissors :size="14" weight="bold" class="mr-1.5 inline" />
+                Cut
+              </button>
+              <button
+                type="button"
+                class="btn-danger min-w-36 text-left"
+                :title="hasSelection ? 'Delete the selected range' : 'Delete the selected piece'"
+                :disabled="!canDeleteSelection"
+                @click="deleteSelectedChunk()">
+                <PhTrash :size="14" weight="bold" class="mr-1.5 inline" />
+                {{ hasSelection ? "Delete selection" : "Delete piece" }}
+              </button>
+              <button
+                type="button"
+                class="btn"
+                :title="
+                  hasSelection
+                    ? 'Move the selected range into its own independent sample'
+                    : 'Promote the selected piece to its own independent sample'
+                "
+                :disabled="!canMakeSfx"
+                @click="extractSelectedChunk()">
+                <PhMagicWand :size="14" weight="bold" class="mr-1.5 inline" />
+                Extract SFX
+              </button>
+              <button
+                type="button"
+                class="btn-secondary"
+                title="Remove everything outside the selection"
+                :disabled="!hasSelection"
+                @click="trimToSelection()">
+                <PhCrop :size="14" weight="bold" class="mr-1.5 inline" />
+                Keep only selection
+              </button>
+            </div>
+            <div v-if="selected" class="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="btn"
+                title="Encode kept pieces as mono MP3 and write it back to the source folder"
+                :disabled="saving || !selected.pcm"
+                @click="saveSelected()">
+                <PhFloppyDisk :size="14" weight="bold" class="mr-1.5 inline" />
+                {{ saving ? "Encoding…" : "Save MP3" }}
+              </button>
+              <button
+                type="button"
+                class="btn-secondary"
+                title="Encode every imported sample to MP3 and write them all back"
+                :disabled="saving || store.samples.length === 0"
+                @click="saveAll()">
+                <PhFloppyDisk :size="14" weight="bold" class="mr-1.5 inline" />
+                {{
+                  saving ? `Encoding ${saveDone}/${saveTotal}…` : `Save all (${store.samples.length})`
+                }}
+              </button>
+            </div>
           </div>
 
           <p v-if="saveSuccess" class="mt-2 text-xs text-emerald-400">{{ saveSuccess }}</p>
