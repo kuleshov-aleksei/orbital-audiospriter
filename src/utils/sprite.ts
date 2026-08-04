@@ -35,7 +35,6 @@ export function buildSprite(samples: Sample[], packId: string, gap: number): Bui
   const chunks: Float32Array[] = []
   const entries: SpriteEntry[] = []
   let cursor = 0
-  let lastEnd = 0
 
   for (const sample of active) {
     const spliced = spliceChunks(sample.pcm!, sample.chunks, sample.sampleRate)
@@ -46,18 +45,16 @@ export function buildSprite(samples: Sample[], packId: string, gap: number): Bui
       for (const event of sample.assignedEvents) {
         entries.push({ name: event, start, end })
       }
-      cursor += spliced.length
-      lastEnd = cursor
-      cursor += gapSamples
+      cursor += spliced.length + gapSamples
     }
   }
 
-  const total = lastEnd
+  const total = Math.max(0, cursor - gapSamples)
   const pcm = new Float32Array(total)
   let offset = 0
   for (const chunk of chunks) {
     pcm.set(chunk, offset)
-    offset += chunk.length
+    offset += chunk.length + gapSamples
   }
 
   return { pack: { id: packId, gap, entries }, pcm, sampleRate }

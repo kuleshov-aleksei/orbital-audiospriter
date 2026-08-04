@@ -62,6 +62,30 @@ describe("buildSprite", () => {
     expect(pack.entries[1].end).toBeCloseTo(2.5, 3)
   })
 
+  it("lays the second sample at the gap offset (audio really has silence between clips)", () => {
+    const gap = 0.5
+    const first = makeSample("a", "a.wav", ["mute"])
+    first.pcm!.fill(1.0)
+    const second = makeSample("b", "b.wav", ["unmute"])
+    second.pcm!.fill(0.5)
+    const { pcm, pack } = buildSprite([first, second], "my_pack", gap)
+
+    const firstEnd = Math.round(pack.entries.find((e) => e.name === "mute")!.end * 44100)
+    const secondStart = Math.round(pack.entries.find((e) => e.name === "unmute")!.start * 44100)
+    expect(secondStart - firstEnd).toBe(Math.round(gap * 44100))
+
+    // First clip present and non-zero
+    expect(Math.abs(pcm[0])).toBeCloseTo(1.0, 5)
+    // Silence during the gap region
+    const gapStart = firstEnd
+    const gapEnd = secondStart
+    for (let i = gapStart; i < gapEnd; i++) {
+      expect(pcm[i]).toBeCloseTo(0, 5)
+    }
+    // Second clip present at its offset
+    expect(Math.abs(pcm[secondStart])).toBeCloseTo(0.5, 5)
+  })
+
   it("skips samples with no assigned events", () => {
     const { pack, pcm } = buildSprite(
       [makeSample("a", "a.wav", ["mute"]), makeSample("b", "b.wav", [])],
