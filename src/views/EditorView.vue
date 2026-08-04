@@ -1,5 +1,5 @@
 <template>
-  <div class="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-8">
+  <div class="mx-auto flex max-w-max flex-col gap-6 px-6 py-8">
     <div>
       <h2 class="text-xl font-semibold text-zinc-100">Editor</h2>
       <p class="mt-1 max-w-3xl text-sm text-zinc-400">
@@ -8,7 +8,7 @@
       </p>
     </div>
 
-    <section class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)_260px]">
+    <section class="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)_300px]">
       <div class="flex flex-col gap-4">
         <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
           <h3 class="text-sm font-semibold text-zinc-200">Import</h3>
@@ -43,7 +43,7 @@
             <li
               v-for="sample in store.samples"
               :key="sample.id"
-              class="group cursor-pointer rounded-lg border px-3 py-2 transition"
+              class="group cursor-pointer rounded-lg border px-3 mr-1 py-2 transition"
               :class="
                 sample.id === selectedId
                   ? 'border-violet-600/60 bg-violet-600/10'
@@ -71,7 +71,7 @@
       </div>
 
       <div class="flex flex-col gap-4">
-        <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 max-w-2xl">
           <h3 class="text-sm font-semibold text-zinc-200">
             {{ selected ? selected.fileName : "No sample selected" }}
           </h3>
