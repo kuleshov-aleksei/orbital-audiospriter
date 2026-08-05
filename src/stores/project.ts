@@ -249,17 +249,17 @@ export const useProjectStore = defineStore("project", () => {
 
   /**
    * Derive a unique source-style file name for an extracted piece of `name`,
-   * e.g. `click.wav` -> `click__part1.wav`. Never collides with an existing
-   * sample's file name (so it round-trips through the event mapping and save).
+   * e.g. `click.wav` -> `click__part1.mp3`. Extracted pieces are always
+   * exported as MP3. Never collides with an existing sample's file name (so it
+   * round-trips through the event mapping and save).
    */
   function derivedFileName(name: string): string {
     const dot = name.lastIndexOf(".")
     const base = dot > 0 ? name.slice(0, dot) : name
-    const ext = dot > 0 ? name.slice(dot) : ""
     const taken = new Set(samples.value.map((s) => s.fileName))
     let n = 1
     while (true) {
-      const candidate = `${base}__part${n}${ext}`
+      const candidate = `${base}__part${n}.mp3`
       if (!taken.has(candidate)) return candidate
       n++
     }
@@ -267,9 +267,9 @@ export const useProjectStore = defineStore("project", () => {
 
   /**
    * Promote a single chunk into its own independent sample: slice the source
-   * PCM for that chunk, register a new sample owning just that slice, and move
-   * the chunk out of the original. Returns the new sample's id, or null when
-   * the chunk/sample doesn't exist.
+   * PCM for that chunk and register a new sample owning just that slice. The
+   * original sample is left untouched. Returns the new sample's id, or null
+   * when the chunk/sample doesn't exist.
    */
   function extractChunkAsSample(id: string, chunkId: string): string | null {
     const sample = samples.value.find((s) => s.id === id)
@@ -296,27 +296,16 @@ export const useProjectStore = defineStore("project", () => {
       assignedEvents: [],
     }
 
-    const remaining = sample.chunks.filter((c) => c.id !== chunkId)
-    if (remaining.length === 0) {
-      removeSample(id)
-    } else {
-      sample.chunks = remaining
-    }
     samples.value.push(extracted)
     return newId
   }
 
-  /** Build the constant that represents a sample good for a fresh extracted sample. */
-  interface ExtractedSample {
-    sample: Sample
-    remaining: SampleChunk[]
-  }
-
   /**
    * Slice `[start, end]` (spliced seconds) out of a sample into a new sample.
-   * Returns the new sample plus what's left of the original's chunks.
+   * The original sample is left untouched. Returns the new sample, or null
+   * when nothing overlaps the range.
    */
-  function sliceSpliced(id: string, start: number, end: number): ExtractedSample | null {
+  function sliceSpliced(id: string, start: number, end: number): Sample | null {
     const sample = samples.value.find((s) => s.id === id)
     if (!sample || !sample.pcm) return null
     const kept = clipChunks(sample.chunks, start, end)
@@ -336,26 +325,17 @@ export const useProjectStore = defineStore("project", () => {
       targetLufs: sample.targetLufs,
       assignedEvents: [],
     }
-    return {
-      sample: extracted,
-      remaining: removeRange(sample.chunks, start, end),
-    }
+    return extracted
   }
 
   /**
-   * Move a spliced time range out of the sample into its own independent
-   * sample (ripple-removing it from the original). Returns the new id, or null
-   * when nothing overlaps the range.
+   * Slice a spliced time range into its own independent sample, leaving the
+   * original untouched. Returns the new id, or null when nothing overlaps the
+   * range.
    */
   function extractRangeAsSample(id: string, start: number, end: number): string | null {
-    const slice = sliceSpliced(id, start, end)
-    if (!slice) return null
-    const { sample: extracted, remaining } = slice
-    if (remaining.length === 0) removeSample(id)
-    else {
-      const sample = samples.value.find((s) => s.id === id)
-      if (sample) sample.chunks = remaining
-    }
+    const extracted = sliceSpliced(id, start, end)
+    if (!extracted) return null
     samples.value.push(extracted)
     return extracted.id
   }

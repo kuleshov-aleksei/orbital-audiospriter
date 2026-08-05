@@ -411,6 +411,38 @@
         </div>
       </div>
     </section>
+
+    <div
+      v-if="sfxDialog"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      @click.self="cancelExtract()">
+      <div class="w-full max-w-sm rounded-xl border border-zinc-700 bg-zinc-900 p-5 shadow-xl">
+        <h3 class="text-sm font-semibold text-zinc-100">Extract SFX</h3>
+        <p class="mt-1 text-xs text-zinc-400">
+          Name the new sample — it will be exported as MP3 to the source folder.
+        </p>
+        <input
+          ref="sfxNameInput"
+          v-model="sfxNameDraft"
+          type="text"
+          class="mt-3 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-100 outline-none ring-violet-600 focus:ring-2"
+          @keydown.enter.prevent="confirmExtract()"
+          @keydown.esc.prevent="cancelExtract()" />
+        <p v-if="sfxError" class="mt-2 text-sm text-red-400">{{ sfxError }}</p>
+        <div class="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="sfxExporting"
+            @click="cancelExtract()">
+            Cancel
+          </button>
+          <button type="button" class="btn" :disabled="sfxExporting" @click="confirmExtract()">
+            {{ sfxExporting ? "Exporting…" : "Save & Export MP3" }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -793,26 +825,72 @@ function clearSelection(): void {
   }
 }
 
+const sfxDialog = ref<{ sampleId: string } | null>(null)
+const sfxNameDraft = ref("")
+const sfxError = ref<string | null>(null)
+const sfxExporting = ref(false)
+const sfxNameInput = useTemplateRef("sfxNameInput")
+
 function extractSelectedChunk(): void {
   const sample = selected.value
   if (!sample) return
+  let newId: string | null = null
   if (hasSelection.value) {
     const sel = selection.value!
-    const newId = store.extractRangeAsSample(sample.id, sel.start, sel.end)
-    if (newId) {
-      clearSelection()
-      undoStack.value = []
-      void loadSample(newId)
-    }
+    newId = store.extractRangeAsSample(sample.id, sel.start, sel.end)
+    if (newId) clearSelection()
+  } else {
+    const chunk = selectedChunk.value
+    if (!chunk) return
+    newId = store.extractChunkAsSample(sample.id, chunk.id)
+  }
+  if (!newId) return
+  const extracted = store.samples.find((s) => s.id === newId)
+  if (!extracted) return
+  undoStack.value = []
+  sfxDialog.value = { sampleId: newId }
+  sfxNameDraft.value = extracted.fileName
+  sfxError.value = null
+  void nextTick(() => sfxNameInput.value?.focus())
+}
+
+async function confirmExtract(): Promise<void> {
+  const dialog = sfxDialog.value
+  if (!dialog || sfxExporting.value) return
+  const sample = store.samples.find((s) => s.id === dialog.sampleId)
+  if (!sample?.pcm) return
+  const rawName = sfxNameDraft.value.trim()
+  if (!rawName) {
+    sfxError.value = "name cannot be empty"
     return
   }
-  const chunk = selectedChunk.value
-  if (!chunk) return
-  const newId = store.extractChunkAsSample(sample.id, chunk.id)
-  if (newId) {
-    undoStack.value = []
-    void loadSample(newId)
+  const finalName = rawName.toLowerCase().endsWith(".mp3")
+    ? rawName
+    : replaceExtension(rawName, "mp3")
+  const error = store.renameSample(dialog.sampleId, finalName)
+  if (error) {
+    sfxError.value = error
+    return
   }
+  sfxExporting.value = true
+  sfxError.value = null
+  try {
+    await saveSampleToSourceDir(sample)
+    sfxDialog.value = null
+    void loadSample(sample.id)
+  } catch (error) {
+    sfxError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    sfxExporting.value = false
+  }
+}
+
+function cancelExtract(): void {
+  const dialog = sfxDialog.value
+  if (!dialog || sfxExporting.value) return
+  store.removeSample(dialog.sampleId)
+  sfxDialog.value = null
+  sfxError.value = null
 }
 
 function togglePlay(): void {

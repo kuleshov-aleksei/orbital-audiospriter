@@ -128,7 +128,7 @@ describe("project store cut/delete chunks", () => {
 })
 
 describe("project store extract chunk as sample", () => {
-  it("promotes a chunk into its own independent sample and keeps the rest", () => {
+  it("promotes a chunk into its own independent sample and keeps the original", () => {
     setActivePinia(createPinia())
     const store = useProjectStore()
     store.addSample(
@@ -143,9 +143,10 @@ describe("project store extract chunk as sample", () => {
     const newId = store.extractChunkAsSample("a", "c1")
 
     expect(newId).not.toBeNull()
-    // Original keeps only the remaining chunk.
+    // Original is left untouched.
     expect(store.samples.find((s) => s.id === "a")!.chunks).toEqual([
       expect.objectContaining({ id: "c0", start: 0, end: 0.4 }),
+      expect.objectContaining({ id: "c1", start: 0.4, end: 1 }),
     ])
     // New sample owns the extracted slice as a 0-start chunk.
     const extracted = store.samples.find((s) => s.id === newId)
@@ -156,7 +157,7 @@ describe("project store extract chunk as sample", () => {
     expect(extracted!.assignedEvents).toEqual([])
   })
 
-  it("removes the original sample when the extracted chunk was the last one", () => {
+  it("keeps the original sample when the extracted chunk was the last one", () => {
     setActivePinia(createPinia())
     const store = useProjectStore()
     store.addSample(makeSample({ id: "a" }))
@@ -164,9 +165,8 @@ describe("project store extract chunk as sample", () => {
     const newId = store.extractChunkAsSample("a", "c0")
 
     expect(newId).not.toBeNull()
-    expect(store.samples.find((s) => s.id === "a")).toBeUndefined()
-    expect(store.samples).toHaveLength(1)
-    expect(store.samples[0].id).toBe(newId)
+    expect(store.samples.find((s) => s.id === "a")).toBeDefined()
+    expect(store.samples).toHaveLength(2)
   })
 
   it("is a no-op for unknown sample or chunk ids", () => {
@@ -179,7 +179,7 @@ describe("project store extract chunk as sample", () => {
     expect(store.samples).toHaveLength(1)
   })
 
-  it("gives extracted samples a unique file name", () => {
+  it("gives extracted samples a unique .mp3 file name", () => {
     setActivePinia(createPinia())
     const store = useProjectStore()
     store.addSample(makeSample({ id: "a" }))
@@ -187,7 +187,7 @@ describe("project store extract chunk as sample", () => {
     const first = store.extractChunkAsSample("a", "c0")!
     const other = store.samples.find((s) => s.id === first)!
     other.fileName = "hit__part1.mp3"
-    store.addSample(makeSample({ id: "b", fileName: "hit.mp3" }))
+    store.addSample(makeSample({ id: "b", fileName: "hit.wav" }))
     const second = store.extractChunkAsSample("b", "c0")!
 
     expect(store.samples.find((s) => s.id === first)!.fileName).toBe("hit__part1.mp3")
@@ -196,7 +196,7 @@ describe("project store extract chunk as sample", () => {
 })
 
 describe("project store range operations (selection)", () => {
-  it("extracts a spliced range into a new sample and removes it from the original", () => {
+  it("extracts a spliced range into a new sample and keeps the original", () => {
     setActivePinia(createPinia())
     const store = useProjectStore()
     store.addSample(
@@ -217,15 +217,14 @@ describe("project store range operations (selection)", () => {
     expect(extracted!.duration).toBeCloseTo(0.2, 5)
     expect(extracted!.chunks[0].start).toBe(0)
     expect(extracted!.chunks[0].end).toBeCloseTo(0.2, 5)
-    // Original loses the 0.6–0.8 slice: second chunk is split in two.
+    // Original is left untouched.
     const original = store.samples.find((s) => s.id === "a")
-    expect(original!.chunks).toHaveLength(3)
+    expect(original!.chunks).toHaveLength(2)
     expect(original!.chunks[0]).toEqual(expect.objectContaining({ start: 0, end: 0.4 }))
-    expect(original!.chunks[1]).toEqual(expect.objectContaining({ start: 0.4, end: 0.6 }))
-    expect(original!.chunks[2]).toEqual(expect.objectContaining({ start: 0.8, end: 1 }))
+    expect(original!.chunks[1]).toEqual(expect.objectContaining({ start: 0.4, end: 1 }))
   })
 
-  it("extracting the full spliced range removes the original sample", () => {
+  it("extracting the full spliced range keeps the original sample", () => {
     setActivePinia(createPinia())
     const store = useProjectStore()
     store.addSample(makeSample())
@@ -233,8 +232,8 @@ describe("project store range operations (selection)", () => {
     const newId = store.extractRangeAsSample("a", 0, 1)
 
     expect(newId).not.toBeNull()
-    expect(store.samples.find((s) => s.id === "a")).toBeUndefined()
-    expect(store.samples).toHaveLength(1)
+    expect(store.samples.find((s) => s.id === "a")).toBeDefined()
+    expect(store.samples).toHaveLength(2)
   })
 
   it("returns null when nothing overlaps the range", () => {

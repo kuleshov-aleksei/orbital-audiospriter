@@ -4,3 +4,4 @@ dev-dist
 public/ffmpeg
 *.log
 .DS_Store
+TODO.md
