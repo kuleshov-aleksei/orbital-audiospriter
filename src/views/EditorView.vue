@@ -633,14 +633,22 @@ function ensureWavesurfer(): void {
   instance.on("play", () => (isPlaying.value = true))
   instance.on("pause", () => (isPlaying.value = false))
   instance.on("timeupdate", (time) => (currentTime.value = time))
+  instance.on("scroll", (startTime, endTime) => {
+    visibleStart = startTime
+    visibleDuration = Math.max(0, endTime - startTime)
+  })
 }
 
 function timeAtClientX(clientX: number): number {
   if (!waveformEl.value || !wavesurfer) return 0
   const rect = waveformEl.value.getBoundingClientRect()
-  const ratio = (clientX - rect.left) / rect.width
-  return Math.min(1, Math.max(0, ratio)) * wavesurfer.getDuration()
+  const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+  return visibleStart + ratio * visibleDuration
 }
+
+/** Visible time range [visibleStart, visibleStart + visibleDuration] of the waveform viewport. */
+let visibleStart = 0
+let visibleDuration = 0
 
 function onWavePointerDown(event: PointerEvent): void {
   if (!dragSelecting && wavesurferReady.value && wavesurfer) {
@@ -736,6 +744,8 @@ async function loadSample(id: string, preserveChunk = false): Promise<void> {
   measuredLufs.value = Number.isFinite(measured.integratedLufs) ? measured.integratedLufs : null
   const wav = pcmToWav16(spliced, sample.sampleRate)
   await wavesurfer.loadBlob(new Blob([wav.buffer as ArrayBuffer]))
+  visibleStart = 0
+  visibleDuration = wavesurfer.getDuration()
   regionByChunk.clear()
   regions.clearRegions()
   let cursor = 0
