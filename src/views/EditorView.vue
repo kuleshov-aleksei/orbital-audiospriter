@@ -95,7 +95,7 @@
                     type="button"
                     class="text-zinc-600 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
                     title="Remove sample"
-                    @click.stop="removeSampleUi(sample.id)">
+                    @click.stop="requestRemoveSample(sample.id)">
                     <PhTrash :size="13" weight="bold" />
                   </button>
                 </div>
@@ -112,6 +112,12 @@
               </div>
             </li>
           </ul>
+          <p
+            v-if="deleteMessage"
+            class="mt-2 text-[11px]"
+            :class="deleteError ? 'text-red-400' : 'text-emerald-400'">
+            {{ deleteMessage }}
+          </p>
         </div>
       </div>
 
@@ -441,6 +447,34 @@
             {{ sfxExporting ? "Exporting…" : "Save & Export MP3" }}
           </button>
         </div>
+      </div>
+    </div>
+
+    <div
+      v-if="deleteConfirm"
+      class="fixed bottom-6 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 rounded-xl border border-zinc-700 bg-zinc-900 p-4 shadow-xl"
+      role="alertdialog"
+      aria-label="Confirm sample deletion">
+      <p class="text-sm text-zinc-200">
+        Delete <span class="font-mono text-rose-300">{{ deleteConfirm.fileName }}</span> from the
+        source folder?
+      </p>
+      <p class="mt-1 text-xs text-zinc-500">This permanently removes the file from disk.</p>
+      <div class="mt-3 flex justify-end gap-2">
+        <button
+          type="button"
+          class="btn-secondary"
+          :disabled="deleting"
+          @click="cancelDeleteSample()">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn-danger"
+          :disabled="deleting"
+          @click="confirmDeleteSample()">
+          {{ deleting ? "Deleting…" : "Delete file" }}
+        </button>
       </div>
     </div>
   </div>
@@ -786,7 +820,7 @@ function deleteSelectedChunk(): void {
     const removedAll = store.deleteRange(sample.id, sel.start, sel.end)
     clearSelection()
     if (removedAll) {
-      removeSampleUi(sample.id)
+      dropSample(sample.id)
       return
     }
     void loadSample(sample.id, false)
@@ -797,7 +831,7 @@ function deleteSelectedChunk(): void {
   pushUndo()
   const removedAll = store.deleteChunk(sample.id, chunk.id)
   if (removedAll) {
-    removeSampleUi(sample.id)
+    dropSample(sample.id)
     return
   }
   void loadSample(sample.id, false)
@@ -811,7 +845,7 @@ function trimToSelection(): void {
   const removedAll = store.trimToRange(sample.id, sel.start, sel.end)
   clearSelection()
   if (removedAll) {
-    removeSampleUi(sample.id)
+    dropSample(sample.id)
     return
   }
   void loadSample(sample.id, false)
@@ -914,6 +948,11 @@ function seekBy(delta: number): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+  if (event.code === "Escape" && deleteConfirm.value) {
+    event.preventDefault()
+    cancelDeleteSample()
+    return
+  }
   const target = event.target as HTMLElement | null
   if (
     target &&
@@ -974,7 +1013,20 @@ function selectSample(id: string): void {
   void loadSample(id)
 }
 
-function removeSampleUi(id: string): void {
+const deleteConfirm = ref<{ sampleId: string; fileName: string } | null>(null)
+const deleting = ref(false)
+const deleteMessage = ref<string | null>(null)
+const deleteError = ref(false)
+
+/** Ask the user to confirm deleting a sample, then remove it from disk and list. */
+function requestRemoveSample(id: string): void {
+  const sample = store.samples.find((s) => s.id === id)
+  if (!sample) return
+  deleteConfirm.value = { sampleId: id, fileName: sample.fileName }
+}
+
+/** Remove a sample from the store and tear down its waveform, if selected. */
+function dropSample(id: string): void {
   const sample = store.samples.find((s) => s.id === id)
   if (sample) store.ignoredFileNames.add(sample.fileName)
   store.removeSample(id)
@@ -989,6 +1041,46 @@ function removeSampleUi(id: string): void {
       regionByChunk.clear()
     }
   }
+}
+
+async function confirmDeleteSample(): Promise<void> {
+  const target = deleteConfirm.value
+  if (!target || deleting.value) return
+  deleting.value = true
+  deleteMessage.value = null
+  let fileError: string | null = null
+  try {
+    const status = await store.ensurePermission("source")
+    const dir = store.sourceDirHandle
+    if (status === "granted" && dir) {
+      try {
+        await dir.removeEntry(target.fileName)
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "NotFoundError")) {
+          fileError = error instanceof Error ? error.message : String(error)
+        }
+      }
+    } else {
+      fileError = "source folder is not writable"
+    }
+  } catch (error) {
+    fileError = error instanceof Error ? error.message : String(error)
+  }
+  deleteConfirm.value = null
+  deleting.value = false
+  dropSample(target.sampleId)
+  if (fileError) {
+    deleteError.value = true
+    deleteMessage.value = `Removed "${target.fileName}" from the list, but the file could not be deleted: ${fileError}`
+  } else {
+    deleteError.value = false
+    deleteMessage.value = `Deleted "${target.fileName}" from the source folder`
+  }
+}
+
+function cancelDeleteSample(): void {
+  if (deleting.value) return
+  deleteConfirm.value = null
 }
 
 const renamingId = ref<string | null>(null)
