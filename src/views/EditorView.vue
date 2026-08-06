@@ -47,7 +47,9 @@
               :class="
                 sample.id === selectedId
                   ? 'border-violet-600/60 bg-violet-600/10'
-                  : 'border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/40'
+                  : isTaken(sample)
+                    ? 'border-emerald-600/50 bg-emerald-600/10'
+                    : 'border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/40'
               "
               @click="selectSample(sample.id)">
               <div class="flex items-center justify-between gap-2">
@@ -108,7 +110,11 @@
               <div class="mt-0.5 text-[11px] text-zinc-500">
                 {{ keptDurationOf(sample).toFixed(2) }} s kept · {{ sample.chunks.length }} piece{{
                   sample.chunks.length === 1 ? "" : "s"
-                }}
+                }}<span v-if="sample.assignedEvents.length > 0" class="text-emerald-400">
+                  · {{ sample.assignedEvents.length }} event{{
+                    sample.assignedEvents.length === 1 ? "" : "s"
+                  }}
+                </span>
               </div>
             </li>
           </ul>
@@ -544,6 +550,10 @@ const importError = ref<string | null>(null)
 
 const selectedId = ref<string | null>(null)
 const selected = computed(() => store.samples.find((s) => s.id === selectedId.value) ?? null)
+
+function isTaken(sample: Sample): boolean {
+  return sample.assignedEvents.length > 0
+}
 
 const waveformEl = useTemplateRef<HTMLElement>("waveformEl")
 let wavesurfer: WaveSurfer | null = null
