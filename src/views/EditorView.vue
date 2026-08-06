@@ -397,15 +397,6 @@
 
           <template v-if="selected && !testMode">
             <div class="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                class="btn-secondary"
-                title="Persist the mapping to __audiosprter.events.json in the source folder"
-                :disabled="mappingSaving"
-                @click="saveMapping()">
-                <PhFloppyDisk :size="14" weight="bold" class="mr-1.5 inline" />
-                {{ mappingSaving ? "Saving…" : "Save mapping" }}
-              </button>
               <span
                 v-if="mappingStatus"
                 class="text-[11px]"
@@ -505,7 +496,6 @@ import {
 import { useProjectStore } from "@/stores/project"
 import { encodeMp3, normalizeAudio } from "@/services/ffmpegClient"
 import { writeFileToDir } from "@/services/fsAccess"
-import { buildEventMapping, EVENT_MAPPING_FILE, saveEventMapping } from "@/services/eventMapping"
 import type { Sample, SampleChunk } from "@/types/audio"
 import { ORBITAL_EVENTS } from "@/types/audio"
 import { chunksTotalDuration, spliceChunks } from "@/utils/chunks"
@@ -1330,29 +1320,47 @@ function onEventClick(event: string): void {
   const sample = selected.value
   if (!sample) return
   store.toggleAssignedEvent(sample.id, event as Sample["assignedEvents"][number])
-  mappingStatus.value = null
+  autosaveMapping()
 }
 
-async function saveMapping(): Promise<void> {
-  const sample = selected.value
-  const dir = store.sourceDirHandle
-  if (!sample || !dir) return
-  mappingSaving.value = true
-  mappingStatus.value = null
-  mappingError.value = false
+/**
+ * Autosave the event mapping whenever an assignment changes. Toggles that land
+ * while a save is already writing are coalesced into a single follow-up write
+ * (via mappingDirty), so rapid clicks still persist the final state without
+ * stacking redundant file writes.
+ */
+let mappingDirty = false
+let mappingFlushing = false
+
+function autosaveMapping(): void {
+  mappingDirty = true
+  void flushMapping()
+}
+
+async function flushMapping(): Promise<void> {
+  if (mappingFlushing) return
+  mappingFlushing = true
   try {
-    await store.ensurePermission("source")
-    if (store.sourceDirStatus !== "granted") {
-      throw new Error("source folder is not writable; re-grant access on the Home tab")
+    while (mappingDirty) {
+      mappingDirty = false
+      mappingSaving.value = true
+      mappingStatus.value = null
+      mappingError.value = false
+      try {
+        mappingStatus.value = await store.saveMapping()
+      } catch (error) {
+        mappingError.value = true
+        mappingStatus.value = error instanceof Error ? error.message : String(error)
+      } finally {
+        mappingSaving.value = false
+      }
     }
-    const mapping = buildEventMapping(store.samples, store.packId, store.gap)
-    await saveEventMapping(dir, mapping)
-    mappingStatus.value = `Saved ${EVENT_MAPPING_FILE} (${Object.keys(mapping.samples).length} samples)`
-  } catch (error) {
-    mappingError.value = true
-    mappingStatus.value = error instanceof Error ? error.message : String(error)
   } finally {
-    mappingSaving.value = false
+    mappingFlushing = false
+    if (mappingDirty) {
+      // A toggle arrived during the last write; flush it too.
+      void flushMapping()
+    }
   }
 }
 

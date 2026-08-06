@@ -23,7 +23,13 @@ import {
 } from "@/services/fsAccess"
 import type { DirScope } from "@/services/fsAccess"
 import { decodeAudioFile } from "@/services/audioDecode"
-import { applyEventMapping, loadEventMapping } from "@/services/eventMapping"
+import {
+  applyEventMapping,
+  buildEventMapping,
+  EVENT_MAPPING_FILE,
+  loadEventMapping,
+  saveEventMapping,
+} from "@/services/eventMapping"
 
 export type DirStatus = "not-chosen" | PermissionState
 
@@ -427,6 +433,23 @@ export const useProjectStore = defineStore("project", () => {
     return true
   }
 
+  /**
+   * Persist the current pack config (event assignments, pack name, gap) to the
+   * mapping file in the source dir. Throws when the source dir is missing or
+   * not writable. Returns a human-readable summary of what was written.
+   */
+  async function saveMapping(): Promise<string> {
+    const dir = sourceDirHandle.value
+    if (!dir) throw new Error("source folder is not chosen")
+    const status = await ensurePermission("source")
+    if (status !== "granted") {
+      throw new Error("source folder is not writable; re-grant access on the Home tab")
+    }
+    const mapping = buildEventMapping(samples.value, packId.value, gap.value)
+    await saveEventMapping(dir, mapping)
+    return `Saved ${EVENT_MAPPING_FILE} (${Object.keys(mapping.samples).length} samples)`
+  }
+
   function snapshot(): ProjectState {
     return {
       sourceDirHandle: sourceDirHandle.value,
@@ -479,6 +502,7 @@ export const useProjectStore = defineStore("project", () => {
     scaleSamplePcm,
     setSampleTargetLufs,
     undoNormalize,
+    saveMapping,
     snapshot,
   }
 })

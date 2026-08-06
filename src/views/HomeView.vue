@@ -221,7 +221,6 @@ import { computed, onMounted, ref } from "vue"
 import { useProjectStore } from "@/stores/project"
 import type { DirStatus } from "@/stores/project"
 import { listAudioFiles, writeFileToDir } from "@/services/fsAccess"
-import { buildEventMapping, saveEventMapping } from "@/services/eventMapping"
 import { encodeSprite } from "@/services/ffmpegClient"
 import type { AudioFileEntry } from "@/services/fsAccess"
 import { formatBytes } from "@/utils/format"
@@ -392,13 +391,7 @@ async function savePack(): Promise<void> {
   packStatus.value = null
   packError.value = false
   try {
-    await store.ensurePermission("source")
-    if (store.sourceDirStatus !== "granted") {
-      throw new Error("source folder is not writable; re-grant access on the Home tab")
-    }
-    const mapping = buildEventMapping(store.samples, store.packId, store.gap)
-    await saveEventMapping(dir, mapping)
-    packStatus.value = `Saved ${store.packId} to the mapping file`
+    packStatus.value = await store.saveMapping()
   } catch (error) {
     packError.value = true
     packStatus.value = error instanceof Error ? error.message : String(error)
