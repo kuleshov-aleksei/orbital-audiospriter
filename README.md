@@ -1,5 +1,7 @@
 # orbital-audiospriter
 
+![editor.png](docs/images/editor.png)
+
 Chrome-only PWA to prepare orbital sound packs: open a source folder of audio samples, edit each
 sample in a browser (trim + loudness-normalize), assign orbital events, and export a
 complete audiosprite - `<pack_id>.mp3/.ogg/.m4a` + `<pack_id>.json` + `<pack_id>.ts` - written
