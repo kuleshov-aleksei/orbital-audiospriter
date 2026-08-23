@@ -4,7 +4,10 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     cooldown:
       default-days: 7
-
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
