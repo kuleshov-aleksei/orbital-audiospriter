@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommitTypeAll(chore)"
+  ],
+  "minimumReleaseAge": "7 days",
+  "schedule": ["* * 12 * *"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "!/^7\\.0\\./"
+    },
+    {
+      "matchPackageNames": ["**"],
+      "groupName": "all-dependencies",
+      "automerge": false,
+      "internalChecksFilter": "strict"
+    }
+  ],
+  "ignorePaths": [
+    "Dockerfile"
+  ],
+  "rangeStrategy": "bump"
+}
