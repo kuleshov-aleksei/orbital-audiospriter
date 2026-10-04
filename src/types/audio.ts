@@ -17,6 +17,8 @@ export type OrbitalEvent =
   | "message"
   | "viewer_joined"
   | "viewer_left"
+  | "reconnecting"
+  | "reconnected"
 
 export const ORBITAL_EVENTS: readonly OrbitalEvent[] = [
   "join_room",
@@ -32,6 +34,8 @@ export const ORBITAL_EVENTS: readonly OrbitalEvent[] = [
   "message",
   "viewer_joined",
   "viewer_left",
+  "reconnecting",
+  "reconnected",
 ]
 
 export interface SampleChunk {

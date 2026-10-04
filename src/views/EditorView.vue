@@ -540,6 +540,7 @@ const EVENT_PAIRS: readonly (readonly string[])[] = [
   ["camera_start", "camera_stop"],
   ["screenshare_start", "screenshare_stop"],
   ["viewer_joined", "viewer_left"],
+  ["reconnecting", "reconnected"],
   ["message"],
 ]
 

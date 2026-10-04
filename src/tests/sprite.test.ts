@@ -127,6 +127,8 @@ describe("findUnassignedEvents", () => {
       "message",
       "viewer_joined",
       "viewer_left",
+      "reconnecting",
+      "reconnected",
     ])
     expect(findUnassignedEvents([all])).toEqual([])
   })
@@ -145,6 +147,8 @@ describe("findUnassignedEvents", () => {
       "screenshare_stop",
       "viewer_joined",
       "viewer_left",
+      "reconnecting",
+      "reconnected",
     ])
   })
 
