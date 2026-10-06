@@ -123,6 +123,87 @@
     </section>
 
     <section class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
+      <h3 class="text-sm font-semibold text-zinc-200">Import published sprite</h3>
+      <p class="mt-1 text-xs text-zinc-500">
+        Recover a workdir from an already-exported sprite: pick the sprite
+        <code class="font-mono">.ts</code> definition and the compiled audio file. Each unique slice
+        is written back as an <code class="font-mono">.mp3</code> (named by the sfx
+        <code class="font-mono">name</code>; aliases share one file) into the samples folder with
+        event assignments restored. MP3 round-trips shift timings by a few ms — slices are exact
+        from the decoded audio.
+      </p>
+      <div v-if="!store.sourceGranted" class="mt-3 text-xs text-zinc-500">
+        Choose a samples folder above first.
+      </div>
+      <template v-else>
+        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+          <label class="text-xs text-zinc-500">
+            Sprite definition (.ts)
+            <select
+              v-model="spriteDefName"
+              class="mt-1 w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200">
+              <option value="" disabled>Select a .ts file…</option>
+              <option v-for="file in defFiles" :key="file.name" :value="file.name">
+                {{ file.name }} ({{ formatBytes(file.size) }})
+              </option>
+            </select>
+          </label>
+          <label class="text-xs text-zinc-500">
+            Compiled audio
+            <select
+              v-model="spriteAudioName"
+              class="mt-1 w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200">
+              <option value="" disabled>Select an audio file…</option>
+              <option v-for="file in files" :key="file.name" :value="file.name">
+                {{ file.name }} ({{ formatBytes(file.size) }})
+              </option>
+            </select>
+          </label>
+        </div>
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+          <label class="btn-secondary cursor-pointer">
+            Choose .ts file…
+            <input
+              ref="spriteFileInput"
+              type="file"
+              accept=".ts"
+              class="hidden"
+              @change="onSpriteFileChosen" />
+          </label>
+          <span v-if="customDefName" class="font-mono text-xs text-violet-300">
+            {{ customDefName }} (uploaded, not in folder)
+          </span>
+          <button
+            type="button"
+            class="btn"
+            :disabled="spriteImporting || !canImportSprite"
+            :title="spriteImportDisabledReason"
+            @click="importSprite(false)">
+            {{
+              spriteImporting
+                ? `Importing… ${store.importDone}/${store.importTotal}`
+                : "Import sprite"
+            }}
+          </button>
+          <button
+            v-if="spriteConflict && !spriteImporting"
+            type="button"
+            class="btn-danger"
+            @click="importSprite(true)">
+            Overwrite existing files
+          </button>
+        </div>
+        <p v-if="spriteStatus" class="mt-2 text-sm text-emerald-400">{{ spriteStatus }}</p>
+        <p v-if="spriteError" class="mt-2 text-sm text-red-400">{{ spriteError }}</p>
+        <ul
+          v-if="spriteWarnings.length > 0"
+          class="mt-2 list-disc space-y-0.5 pl-5 text-xs text-amber-400">
+          <li v-for="warning in spriteWarnings" :key="warning">{{ warning }}</li>
+        </ul>
+      </template>
+    </section>
+
+    <section class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
       <h3 class="text-sm font-semibold text-zinc-200">Sprite pack</h3>
       <p class="mt-1 text-xs text-zinc-500">
         Name of the audio sprite (snake_case, used as the file base name at export) and the silence
@@ -220,9 +301,15 @@
 import { computed, onMounted, ref } from "vue"
 import { useProjectStore } from "@/stores/project"
 import type { DirStatus } from "@/stores/project"
-import { listAudioFiles, writeFileToDir } from "@/services/fsAccess"
+import {
+  listAudioFiles,
+  listDefinitionFiles,
+  readFileBytes,
+  writeFileToDir,
+} from "@/services/fsAccess"
 import { encodeSprite } from "@/services/ffmpegClient"
-import type { AudioFileEntry } from "@/services/fsAccess"
+import type { AudioFileEntry, DefinitionFileEntry } from "@/services/fsAccess"
+import { pickSpriteAudioFile } from "@/services/spriteImport"
 import { formatBytes } from "@/utils/format"
 import {
   buildAudiospriteJson,
@@ -238,6 +325,33 @@ const store = useProjectStore()
 
 const files = ref<AudioFileEntry[]>([])
 const filesError = ref<string | null>(null)
+
+const defFiles = ref<DefinitionFileEntry[]>([])
+const spriteDefName = ref("")
+const spriteAudioName = ref("")
+const customDefName = ref<string | null>(null)
+const customDefText = ref<string | null>(null)
+const spriteFileInput = ref<HTMLInputElement | null>(null)
+const spriteImporting = ref(false)
+const spriteStatus = ref<string | null>(null)
+const spriteError = ref<string | null>(null)
+const spriteWarnings = ref<string[]>([])
+const spriteConflict = ref(false)
+
+const canImportSprite = computed(
+  () =>
+    store.sourceGranted &&
+    (spriteDefName.value !== "" || customDefText.value !== null) &&
+    spriteAudioName.value !== "",
+)
+
+const spriteImportDisabledReason = computed(() => {
+  if (!store.sourceGranted) return "Choose a samples folder first"
+  if (spriteDefName.value === "" && customDefText.value === null)
+    return "Select a sprite .ts definition first"
+  if (!spriteAudioName.value) return "Select the compiled audio file first"
+  return ""
+})
 
 const packSaving = ref(false)
 const packStatus = ref<string | null>(null)
@@ -374,13 +488,101 @@ async function refreshFiles(): Promise<void> {
   const dir = store.sourceDirHandle
   if (!dir || store.sourceDirStatus !== "granted") {
     files.value = []
+    defFiles.value = []
     return
   }
   filesError.value = null
   try {
-    files.value = await listAudioFiles(dir)
+    const [audio, defs] = await Promise.all([listAudioFiles(dir), listDefinitionFiles(dir)])
+    files.value = audio
+    defFiles.value = defs
+    if (spriteDefName.value === "" && customDefText.value === null && defs.length === 1) {
+      spriteDefName.value = defs[0].name
+    }
+    if (spriteDefName.value !== "" && !defs.some((d) => d.name === spriteDefName.value)) {
+      spriteDefName.value = ""
+    }
+    const names = audio.map((f) => f.name)
+    if (!names.includes(spriteAudioName.value)) {
+      const defFile = spriteDefName.value || customDefName.value || ""
+      const defBase = defFile.includes(".") ? defFile.slice(0, defFile.lastIndexOf(".")) : defFile
+      spriteAudioName.value = pickSpriteAudioFile(names, store.packId, defBase) ?? ""
+    }
   } catch (error) {
     filesError.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function onSpriteFileChosen(): Promise<void> {
+  const input = spriteFileInput.value
+  const file = input?.files?.[0]
+  if (!file) return
+  spriteError.value = null
+  try {
+    customDefText.value = await file.text()
+    customDefName.value = file.name
+    spriteDefName.value = ""
+    const names = files.value.map((f) => f.name)
+    const defBase = file.name.includes(".")
+      ? file.name.slice(0, file.name.lastIndexOf("."))
+      : file.name
+    if (!names.includes(spriteAudioName.value)) {
+      spriteAudioName.value = pickSpriteAudioFile(names, store.packId, defBase) ?? ""
+    }
+  } catch (error) {
+    spriteError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    if (input) input.value = ""
+  }
+}
+
+async function importSprite(overwrite: boolean): Promise<void> {
+  if (!canImportSprite.value || spriteImporting.value) return
+  spriteImporting.value = true
+  spriteStatus.value = null
+  spriteError.value = null
+  spriteWarnings.value = []
+  if (!overwrite) spriteConflict.value = false
+  try {
+    let definitionText: string
+    let definitionFileName: string
+    if (spriteDefName.value !== "") {
+      const dir = store.sourceDirHandle
+      const entry = defFiles.value.find((d) => d.name === spriteDefName.value)
+      if (!dir || !entry) throw new Error("sprite definition file is no longer available")
+      definitionText = new TextDecoder().decode(await readFileBytes(entry.handle))
+      definitionFileName = entry.name
+    } else if (customDefText.value !== null && customDefName.value !== null) {
+      definitionText = customDefText.value
+      definitionFileName = customDefName.value
+    } else {
+      throw new Error("select a sprite .ts definition first")
+    }
+    const audioEntry = files.value.find((f) => f.name === spriteAudioName.value)
+    if (!audioEntry) throw new Error("compiled audio file is no longer available")
+    const audioBytes = await readFileBytes(audioEntry.handle)
+    const result = await store.importPublishedSprite({
+      definitionText,
+      definitionFileName,
+      audioBytes,
+      audioFileName: audioEntry.name,
+      overwrite,
+    })
+    spriteWarnings.value = result.warnings
+    spriteStatus.value =
+      `Imported ${result.files.length} sample${result.files.length === 1 ? "" : "s"}: ${result.files.join(", ")}. ` +
+      `Pack name is "${store.packId}".`
+    await refreshFiles()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.startsWith("CONFLICT:")) {
+      spriteConflict.value = true
+      spriteError.value = message.replace(/^CONFLICT:\s*/, "")
+    } else {
+      spriteError.value = message
+    }
+  } finally {
+    spriteImporting.value = false
   }
 }
 

@@ -20,9 +20,19 @@ import {
   readFileBytes,
   requestPermission,
   restoreDirectoryHandle,
+  writeFileToDir,
 } from "@/services/fsAccess"
 import type { DirScope } from "@/services/fsAccess"
 import { decodeAudioFile } from "@/services/audioDecode"
+import { encodeMp3 } from "@/services/ffmpegClient"
+import { pcmToWav16 } from "@/utils/wav"
+import {
+  groupSpriteSlices,
+  packIdFromFileName,
+  parseSpriteTs,
+  slicePcm,
+  sliceToFileName,
+} from "@/services/spriteImport"
 import {
   applyEventMapping,
   buildEventMapping,
@@ -32,6 +42,24 @@ import {
 } from "@/services/eventMapping"
 
 export type DirStatus = "not-chosen" | PermissionState
+
+export interface PublishedSpriteInput {
+  /** Raw text of the orbital sprite `.ts` definition. */
+  definitionText: string
+  /** File name of the definition (used to derive the pack id hint). */
+  definitionFileName: string
+  /** Bytes of the compiled sprite audio to slice. */
+  audioBytes: Uint8Array<ArrayBuffer>
+  audioFileName: string
+  /** When false and target files exist, abort with a conflict error. */
+  overwrite: boolean
+}
+
+export interface PublishedSpriteResult {
+  files: string[]
+  warnings: string[]
+  packIdHint: string
+}
 
 export const useProjectStore = defineStore("project", () => {
   const sourceDirHandle = ref<FileSystemDirectoryHandle | null>(null)
@@ -450,6 +478,121 @@ export const useProjectStore = defineStore("project", () => {
     return `Saved ${EVENT_MAPPING_FILE} (${Object.keys(mapping.samples).length} samples)`
   }
 
+  /**
+   * Recover an editable workdir from a published sprite: parse the `.ts`
+   * definition, slice the compiled audio into one `.mp3` per unique timing
+   * (aliases share a file named by the sfx `name`), write them to the source
+   * dir, load them into the store with event assignments, and persist the
+   * mapping file.
+   */
+  async function importPublishedSprite(
+    input: PublishedSpriteInput,
+  ): Promise<PublishedSpriteResult> {
+    const dir = sourceDirHandle.value
+    if (!dir) throw new Error("source folder is not chosen")
+    const status = await ensurePermission("source")
+    if (status !== "granted") {
+      throw new Error("source folder is not writable; re-grant access on the Home tab")
+    }
+    if (importing.value) throw new Error("an import is already running")
+
+    const { entries, warnings: parseWarnings } = parseSpriteTs(input.definitionText)
+    const { groups, warnings: groupWarnings } = groupSpriteSlices(entries)
+    const warnings = [...parseWarnings, ...groupWarnings]
+    const packIdHint = packIdFromFileName(input.definitionFileName)
+
+    const taken = new Set(samples.value.map((s) => s.fileName))
+    const planned = groups.map((group) => ({
+      group,
+      fileName: sliceToFileName(group.sfxName, group.events[0], taken),
+    }))
+
+    if (!input.overwrite) {
+      const conflicts: string[] = []
+      for (const { fileName } of planned) {
+        try {
+          await dir.getFileHandle(fileName)
+          conflicts.push(fileName)
+        } catch {
+          // missing file — safe to create
+        }
+      }
+      if (conflicts.length > 0) {
+        throw new Error(
+          `CONFLICT: these files already exist in the source folder: ${conflicts.join(", ")}. Confirm overwrite to replace them.`,
+        )
+      }
+    }
+
+    const decoded = await decodeAudioFile(input.audioBytes, input.audioFileName)
+
+    importing.value = true
+    importTotal.value = planned.length
+    importDone.value = 0
+    const written: string[] = []
+    try {
+      for (const { group, fileName } of planned) {
+        try {
+          const { slice, clamped, outOfRange } = slicePcm(
+            decoded.pcm,
+            decoded.sampleRate,
+            group.startMs,
+            group.durationMs,
+          )
+          if (outOfRange || slice.length === 0) {
+            warnings.push(
+              `Skipped "${fileName}": slice ${group.startMs}ms +${group.durationMs}ms is outside the audio (${decoded.pcm.length / decoded.sampleRate}s)`,
+            )
+            continue
+          }
+          if (clamped) {
+            warnings.push(`"${fileName}": slice was clamped to the audio length`)
+          }
+          const wav = pcmToWav16(slice, decoded.sampleRate)
+          const encoded = await encodeMp3(wav)
+          await writeFileToDir(dir, fileName, encoded.bytes)
+          let fileHandle: FileSystemFileHandle | null = null
+          try {
+            fileHandle = await dir.getFileHandle(fileName)
+          } catch {
+            fileHandle = null
+          }
+          const duration = slice.length / decoded.sampleRate
+          ignoredFileNames.value.delete(fileName)
+          samples.value = samples.value.filter(
+            (s) => s.fileName.toLowerCase() !== fileName.toLowerCase(),
+          )
+          samples.value.push({
+            id: crypto.randomUUID(),
+            fileName,
+            fileHandle,
+            pcm: slice,
+            sampleRate: decoded.sampleRate,
+            duration,
+            chunks: [{ id: crypto.randomUUID(), start: 0, end: duration }],
+            loudness: undefined,
+            targetLufs: DEFAULT_TARGET_LUFS,
+            assignedEvents: [...group.events],
+          })
+          written.push(fileName)
+        } finally {
+          importDone.value++
+        }
+      }
+    } finally {
+      importing.value = false
+    }
+
+    if (written.length === 0) {
+      throw new Error(
+        `Nothing was imported. ${warnings.length > 0 ? warnings.join(" ") : "All slices were outside the audio."}`,
+      )
+    }
+    if (!packId.value) packId.value = packIdHint
+    await saveMapping()
+    return { files: written, warnings, packIdHint }
+  }
+
   function snapshot(): ProjectState {
     return {
       sourceDirHandle: sourceDirHandle.value,
@@ -503,6 +646,7 @@ export const useProjectStore = defineStore("project", () => {
     setSampleTargetLufs,
     undoNormalize,
     saveMapping,
+    importPublishedSprite,
     snapshot,
   }
 })

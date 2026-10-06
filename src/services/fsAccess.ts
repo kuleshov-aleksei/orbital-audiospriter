@@ -80,6 +80,30 @@ export interface AudioFileEntry {
   handle: FileSystemFileHandle
 }
 
+export interface DefinitionFileEntry {
+  name: string
+  size: number
+  handle: FileSystemFileHandle
+}
+
+/** List sprite definition files (`*.ts`) in a directory, sorted by name. */
+export async function listDefinitionFiles(
+  dirHandle: FileSystemDirectoryHandle,
+): Promise<DefinitionFileEntry[]> {
+  const entries: DefinitionFileEntry[] = []
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (handle.kind !== "file" || !name.toLowerCase().endsWith(".ts")) continue
+    let size = 0
+    try {
+      size = (await handle.getFile()).size
+    } catch {
+      // size stays 0 if the file cannot be read (e.g. a dead handle)
+    }
+    entries.push({ name, size, handle: handle as FileSystemFileHandle })
+  }
+  return entries.sort((a, b) => a.name.localeCompare(b.name))
+}
+
 export async function listAudioFiles(
   dirHandle: FileSystemDirectoryHandle,
 ): Promise<AudioFileEntry[]> {
