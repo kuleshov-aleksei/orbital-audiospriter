@@ -3,3 +3,5 @@ minimumReleaseAge: 7200
 minimumReleaseAgeExclude:
   # Renovate security update: vitest@4.1.11
   - vitest@4.1.11
+  # Renovate security update: vite@8.3.3
+  - vite@8.3.3
